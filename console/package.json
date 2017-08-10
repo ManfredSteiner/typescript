@@ -1,0 +1,45 @@
+{
+  "name": "console",
+  "version": "0.0.0",
+  "description": "Console with Node.js",
+  "main": "main.js",
+  "scripts": {
+    "clean": "./node_modules/gulp/bin/gulp.js clean",
+    "build": "./node_modules/gulp/bin/gulp.js build",
+    "prestart": "./node_modules/gulp/bin/gulp.js cleanAndBuild",
+    "start": "node dist/main.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "typescript"
+  ],
+  "author": "Manfred Steiner",
+  "license": "ISC",
+  "private": true,
+  "dependencies": {
+    "@types/byline": "^4.2.31",
+    "@types/nconf": "0.0.34",
+    "@types/node": "^8.0.4",
+    "@types/sprintf-js": "0.0.27",
+    "byline": "^5.0.0",
+    "debug": "^2.6.8",
+    "debug-sx": "^0.1.7",
+    "intl": "^1.2.5",
+    "intl-locales-supported": "^1.0.0",
+    "nconf": "^0.8.4"
+  },
+  "devDependencies": {
+    "del": "^3.0.0",
+    "gulp": "^3.9.1",
+    "gulp-changed": "^3.1.0",
+    "gulp-sourcemaps": "^2.6.0",
+    "gulp-tslint": "^8.1.1",
+    "gulp-typescript": "^3.1.7",
+    "gulp-using": "^0.1.1",
+    "merge-stream": "^1.0.1",
+    "path": "^0.12.7",
+    "run-sequence": "^1.2.2",
+    "tslint": "^5.4.3",
+    "typescript": "^2.4.1"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "console": {
+    "name": "console"
+  },
+  "debug": {
+    "depth": 3,
+    "colors" : true,
+    "wtimediff": 6,
+    "wmodule": 15,
+    "wlevel": 6,
+    "location": "-*",
+    "enabled": "*::WARN"
+  },
+  "logfile": {
+    "all": { "filename": "/tmp/console-all.log", "namespaces": "*::*", "locationNamespaces": "*" }
+  }
+}
