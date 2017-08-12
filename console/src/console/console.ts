@@ -77,31 +77,12 @@ export class Console {
            this._waitForResponse(input);
            return;
         }
-
         this._shell.handleInput(input);
-        // if (input === 'exit') {
-        //    this.exit();
-        //    return;
-        // }
-
-        // this._shell.handleInput(input);
-        // this._readLine.prompt();
     }
 
 
     private completer (linePartial: string, callback: (err: any, result: CompleterResult) => void ) {
         this._shell.completer(linePartial, callback);
-        // if (linePartial === 's') {
-        //     this._out.write('\nstatus stop\n');
-        //     callback(null, [[ 'status', 'stop' ], 's' ]);
-        //     return;
-        // }
-        // if (linePartial === 'sta') {
-        //     callback(null, [[ 'status' ], 'sta' ]);
-        //     return;
-        // }
-
-        // callback(null, [[], linePartial]);
     }
 
 }

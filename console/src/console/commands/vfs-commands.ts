@@ -1,17 +1,22 @@
 
-import { VfsShellCommand, IVfsShellCmds } from '../vfs-shell-command';
+import { VfsShellCommand, IVfsShellCmds, IVfsCommandOptionConfig, IParsedCommand, IVfsCommandOptions } from '../vfs-shell-command';
 import { Vfs } from '../vfs';
 import { VfsAbstractNode, VfsDataNode, VfsDirectoryNode } from '../vfs-node';
 import { VfsCmdTest } from './vfs-cmd-test';
 
+import { CompleterResult } from 'readline';
+
 import * as byline from 'byline';
 
-export function addDefaultCommands (shell: IVfsShellCmds, collection: { [ key: string]: VfsShellCommand }) {
+export function addDefaultCommands (shell: IVfsShellCmds,
+                                    collection: { [ key: string]: VfsShellCommand },
+                                    help: (args: string [], options: IVfsCommandOptions) => number) {
     const cmdAlias = new VfsCmdAlias(shell); if (!collection[cmdAlias.name]) { collection[cmdAlias.name] = cmdAlias; }
     const cmdCat = new VfsCmdCat(shell); if (!collection[cmdCat.name]) { collection[cmdCat.name] = cmdCat; }
     const cmdCd = new VfsCmdCd(shell); if (!collection[cmdCd.name]) { collection[cmdCd.name] = cmdCd; }
     const cmdEcho = new VfsCmdEcho(); if (!collection[cmdEcho.name]) { collection[cmdEcho.name] = cmdEcho; }
     const cmdGrep = new VfsCmdGrep(); if (!collection[cmdGrep.name]) { collection[cmdGrep.name] = cmdGrep; }
+    const cmdHelp = new VfsCmdHelp(help); if (!collection[cmdHelp.name]) { collection[cmdHelp.name] = cmdHelp; }
     const cmdPwd = new VfsCmdPwd(shell); if (!collection[cmdPwd.name]) { collection[cmdPwd.name] = cmdPwd; }
     const cmdLs = new VfsCmdLs(shell); if (!collection[cmdLs.name]) { collection[cmdLs.name] = cmdLs; }
     const cmdWait = new VfsCmdWait(); if (!collection[cmdWait.name]) { collection[cmdWait.name] = cmdWait; }
@@ -28,19 +33,13 @@ class VfsCmdAlias extends VfsShellCommand {
         this._alias = shellCmds.alias;
     }
 
-    public execute (args: string []): Promise<number> {
-        const options = this.parseOptions(args, {});
-        if (!options) {
-            this.env.stderr.write('Error (alias): invalid options');
-            this.println();
-            this.end();
-            return Promise.reject(1);
-        }
-        const rv = this._alias(args[1], args.length >= 3 ? args.slice(2) : []);
+    public execute (args: string [], options: IVfsCommandOptions): Promise<number> {
+        const rv = this._alias(args[0], args.length >= 2 ? args.slice(1) : []);
         this.print(rv);
         this.end();
         return Promise.resolve(0);
     }
+
 
     public getHelp (): string {
       return 'show aliases or set alias for command';
@@ -57,24 +56,22 @@ class VfsCmdEcho extends VfsShellCommand {
         super('echo');
     }
 
-    public execute (args: string []): Promise<number> {
-        const options = this.parseOptions(args, { noLine: { short: 'n' }});
-        if (!options) {
-            this.env.stderr.write('Error (cd): invalid options');
-            this.println();
-            this.end();
-            return Promise.reject(1);
-        }
+    public optionConfig (): IVfsCommandOptionConfig {
+      return {
+         noLine: { short: 'n', argCnt: 0 },
+      };
+    }
 
-        if (args.length > 2) {
+    public execute (args: string [], options: IVfsCommandOptions): Promise<number> {
+        if (args.length > 1) {
           this.end('echo: too much arguments');
           return Promise.reject(1);
         }
-        if (args.length === 2) {
+        if (args.length === 1) {
             if (options.noLine) {
-                this.print(args[1]);
+                this.print(args[0]);
             } else {
-                this.println(args[1]);
+                this.println(args[0]);
             }
         }
 
@@ -93,6 +90,33 @@ class VfsCmdEcho extends VfsShellCommand {
 }
 
 
+class VfsCmdHelp extends VfsShellCommand {
+
+    private _help: (args: string [], options: IVfsCommandOptions) => number;
+
+    constructor (help: (args: string [], options: IVfsCommandOptions) => number) {
+        super('help');
+        this._help = help;
+    }
+
+    public execute (args: string [], options: IVfsCommandOptions): Promise<number> {
+        if (args.length > 1) {
+            this.end('Error (help): invalid arguments');
+            return Promise.reject(1);
+        }
+        return Promise.resolve(this._help(args, options));
+    }
+
+    public getHelp (): string {
+      return 'more information for commands';
+    }
+
+    public getSyntax (): string {
+        return '[ <command> ]';
+    }
+
+}
+
 class VfsCmdGrep extends VfsShellCommand {
     private _regExp: RegExp;
 
@@ -100,21 +124,13 @@ class VfsCmdGrep extends VfsShellCommand {
         super('grep');
     }
 
-    public execute (args: string []): Promise<number> {
-        const options = this.parseOptions(args, { });
-        if (!options) {
-            this.env.stderr.write('Error (pwd): invalid options');
-            this.println();
-            this.end();
-            return Promise.reject(1);
-        }
-
-        if (args.length < 2) {
+    public execute (args: string [], options: IVfsCommandOptions): Promise<number> {
+        if (args.length !== 1) {
           this.env.stderr.write('invalid arguments\n');
           return Promise.reject(1);
       }
 
-      const expr = args[1];
+      const expr = args[0];
       if (expr.startsWith('/') && expr.endsWith('/')) {
         this._regExp = new RegExp(expr);
       } else {
@@ -172,16 +188,8 @@ class VfsCmdPwd extends VfsShellCommand {
         this._pwd = shellCmds.pwd;
     }
 
-    public execute (args: string []): Promise<number> {
-        const options = this.parseOptions(args, { });
-        if (!options) {
-            this.env.stderr.write('Error (pwd): invalid options');
-            this.println();
-            this.end();
-            return Promise.reject(1);
-        }
-
-        if (args.length > 1) {
+    public execute (args: string [], options: IVfsCommandOptions): Promise<number> {
+        if (args.length > 0) {
             this.end('pwd: too much arguments');
             return Promise.reject(1);
         }
@@ -209,20 +217,12 @@ class VfsCmdCat extends VfsShellCommand {
         this._files = shellCmds.files;
     }
 
-    public execute (args: string []): Promise<number> {
-        const options = this.parseOptions(args, { });
-        if (!options) {
-            this.env.stderr.write('Error (cat): invalid options');
-            this.println();
-            this.end();
-            return Promise.reject(1);
-        }
-
-        if (args.length < 2) {
+    public execute (args: string [], options: IVfsCommandOptions): Promise<number> {
+        if (args.length < 1) {
             this.end('Error (cat): missing arguments');
             return Promise.reject(1);
         }
-        for (let i = 1; i < args.length; i++) {
+        for (let i = 0; i < args.length; i++) {
             const resources = this._files(args[i]);
             if (Array.isArray(resources) && resources.length === 1 && resources[0] instanceof VfsDataNode) {
                 (<VfsDataNode<any>>resources[0]).printData(this.env.stdout);
@@ -253,21 +253,12 @@ class VfsCmdCd extends VfsShellCommand {
         this._cd = shellCmds.cd;
     }
 
-
-    public execute (args: string []): Promise<number> {
-        const options = this.parseOptions(args, { });
-        if (!options) {
-            this.env.stderr.write('Error (cd): invalid options');
-            this.println();
-            this.end();
-            return Promise.reject(1);
-        }
-
-        if (args.length > 2) {
+    public execute (args: string [], options: IVfsCommandOptions): Promise<number> {
+        if (args.length > 1) {
             this.end('cd: too much arguments');
             return Promise.reject(2);
         }
-        const errmsg = this._cd(args[1]);
+        const errmsg = this._cd(args[0]);
         if (errmsg) {
             this.end('Error (' + this.name + '): ' + errmsg);
             return Promise.reject(3);
@@ -296,23 +287,19 @@ class VfsCmdLs extends VfsShellCommand {
         this._pwd = shellCmds.pwd;
     }
 
-    public execute (args: string []): Promise<number> {
-        let rv = 0;
-        const options = this.parseOptions(args, {
-                                                  directory: { short: 'd', argCnt: 0 },
-                                                  listing:   { short: 'l', argCnt: 0 }
-                                                });
-        if (!options) {
-            this.env.stderr.write('Error (ls): invalid options');
-            this.println();
-            this.end();
-            return Promise.reject(1);
-        }
+    public optionConfig (): IVfsCommandOptionConfig {
+        return {
+            directory: { short: 'd', argCnt: 0 },
+            listing:   { short: 'l', argCnt: 0 }
+        };
+    }
 
+    public execute (args: string [], options: IVfsCommandOptions): Promise<number> {
+        let rv = 0;
         const asLine = options.listing;
-        for (let i = 0; i < args.length; i++) {
-            if (i === 0 && args.length > 1) { continue; }
-            const path = i === 0 ? '.' : args[i];
+        for (let i = -1; i < args.length; i++) {
+            if (i === -1 && args.length > 0) { continue; }
+            const path = i === -1 ? '.' : args[i];
             const resources = this._files(path) ;
             if (!Array.isArray(resources) || resources.length === 0) {
                 this.env.stderr.write('Error (ls): \'' + path + '\' not found');
@@ -327,7 +314,7 @@ class VfsCmdLs extends VfsShellCommand {
                                 this.print(r.name + ' ');
                             }
                         } else {
-                            if (args.length > 2) {
+                            if (args.length > 1) {
                                 this.println('\n' + path + ':');
                             }
                             const childs = this._files(path + '/*') || [];
@@ -362,6 +349,37 @@ class VfsCmdLs extends VfsShellCommand {
     public getSyntax (): string {
         return '  [ --directory | -d] [ --listing | -l] file1 [...]';
     }
+
+    public completer (linePartial: string, parsedCommand: IParsedCommand): CompleterResult {
+        if (parsedCommand && parsedCommand.args) {
+            let filter = '*';
+            let fileNamePartial = '';
+            if (parsedCommand.args.length > 0) {
+                fileNamePartial = parsedCommand.args[parsedCommand.args.length - 1 ]
+                filter = fileNamePartial + '*';
+                const i = fileNamePartial.lastIndexOf('/');
+                if (i >= 0) {
+                    if (fileNamePartial.length !== (i + 1)) {
+                        fileNamePartial = fileNamePartial.substr(i + 1);
+                    } else {
+                        fileNamePartial = '';
+                    }
+                }
+            }
+            const files = this._files(filter);
+            const hits: string [] = [];
+            for (const f of files) {
+                if (f instanceof VfsDirectoryNode) {
+                    hits.push(f.name + '/');
+                } else {
+                    hits.push(f.name);
+                }
+            }
+            return [ hits, fileNamePartial ];
+        }
+        return undefined;
+    }
+
 }
 
 
@@ -370,19 +388,12 @@ class VfsCmdWait extends VfsShellCommand {
         super('wait');
     }
 
-    public execute (args: string []): Promise<number> {
-        const options = this.parseOptions(args, { noLine: { short: 'n' }});
-        if (!options) {
-            this.env.stderr.write('Error (wait): invalid options');
-            this.println();
-            this.end();
-            return Promise.reject(1);
-        }
-        if (args.length !== 2) {
+    public execute (args: string [], options: IVfsCommandOptions): Promise<number> {
+        if (args.length !== 1) {
             this.end('wait: invalid arguments');
             return Promise.reject(1);
         }
-        const delay = +args[1];
+        const delay = +args[0];
         if (delay === NaN || delay < 0) {
             this.end('wait: invalid delay seconds');
             return Promise.reject(1);

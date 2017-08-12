@@ -4,6 +4,8 @@ import { sprintf } from 'sprintf-js';
 import * as util from 'util';
 
 import { Readable, Writable } from 'stream';
+import { CompleterResult } from 'readline';
+
 
 
 export abstract class VfsShellCommand {
@@ -14,8 +16,7 @@ export abstract class VfsShellCommand {
     constructor (name: string) {
       this._name = name;
     }
-
-    public get name () {
+public get name () {
         return this._name;
     }
 
@@ -23,9 +24,17 @@ export abstract class VfsShellCommand {
         return this._env;
     }
 
-    public abstract execute (args: string []): Promise<number>;
+    public abstract execute (args: string [], options: IVfsCommandOptions): Promise<number>;
     public abstract getHelp (): string [] | string;
     public abstract getSyntax (): string [] | string;
+
+    public completer (linePartial: string, parsedCommand: IParsedCommand): CompleterResult {
+        return undefined;
+    }
+
+    public optionConfig (): IVfsCommandOptionConfig {
+      return {};
+    }
 
     public interrupt () {
       this._interrupted = true;
@@ -205,3 +214,36 @@ export interface IVfsShellCmds {
     version: () => string
 
 }
+
+export interface IVfsCommandOptionConfig {
+   [ key: string ]: { short?: string, argCnt?: number }
+}
+
+export interface IVfsCommandOption {
+    valid: boolean;
+    name?: string;
+    long?: string;
+    short?: string;
+    args?: string [];
+}
+
+export interface IVfsCommandOptions {
+   [ key: string ]: IVfsCommandOption;
+}
+
+export interface IParsedCommand {
+    valid: boolean;
+    cmd?: VfsShellCommand,
+    options?: IVfsCommandOption [],
+    args?: string [],
+    cmdString?: string,
+    optionPartial?: { option: string, known: boolean, args?: string [] }
+    beforeAlias?: string []
+}
+
+export interface IParsedCommands {
+    valid: boolean,
+    cmds: IParsedCommand []
+}
+
+

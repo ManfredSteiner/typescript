@@ -2,7 +2,8 @@
 import { Vfs } from './vfs';
 import { VfsAbstractNode, VfsDirectoryNode, VfsDataNode, VfsStaticTextFile } from './vfs-node';
 import { IVfsShellUser } from './vfs-shell-user';
-import { IVfsEnvironment, IVfsShellCmds, PipeReadable, PipeWritable, VfsShellCommand } from './vfs-shell-command';
+import { IVfsEnvironment, IVfsShellCmds, PipeReadable, PipeWritable, VfsShellCommand,
+         IParsedCommands, IParsedCommand, IVfsCommandOption, IVfsCommandOptions } from './vfs-shell-command';
 import { addDefaultCommands } from './commands/vfs-commands';
 
 import { Readable, Writable } from 'stream';
@@ -44,7 +45,7 @@ export class VfsShell {
         }
         this._aliases = { ll: [ 'ls', '-l' ] };
 
-        addDefaultCommands(this._shellCmds, this._commands);
+        addDefaultCommands(this._shellCmds, this._commands, this.help.bind(this));
         this.setPrompt();
         this.console.prompt();
     }
@@ -83,83 +84,35 @@ export class VfsShell {
             return;
         }
 
-        let arg = '', mode = undefined;
-        let args: string [] = [];
-        for (let i = 0; i < line.length; i++) {
-            let c = line[i];
-            if (!mode && (c === ' ' || c === '\t' || c === '\0' )) {
-                if (arg.length > 0) { args.push(arg); arg = ''; }
-            } else if (!mode && (c === '"' || c === '\'')) {
-                mode = c;
-            } else if (mode && (c === '"' || c === '\'')) {
-                mode = undefined;
-                if (arg.length > 0) { args.push(arg); arg = ''; }
-            } else if (mode === '\'') {
-                arg += c;
-            } else if (c === '$' && i < (line.length - 1)) {
-                c = line[++i];
-                if (c === '?') {
-                    arg += this._lastExitCode;
-                } else {
-                    arg += '$' + c;
-                }
-            } else if (c === '\\' && i < (line.length - 1)) {
-                c = line[++i];
-                switch (c) {
-                   case 'n': arg += '\n'; break;
-                   case 'r': arg += '\r'; break;
-                   case 't': arg += '\t'; break;
-                   case '$': arg += '$'; break;
-                   case '0': arg += '\0'; break;
-                   default:  arg += '\\' + c;
-                }
-            } else {
-                arg += c;
-            }
+        if (line.trim() === 'exit') {
+            this._cmdPending = true;
+            this.console.exit();
+            return;
         }
-        if (arg.length > 0) { args.push(arg); arg = ''; }
 
-        // let args = line && line.trim().split(/\s+/);
-        if (!Array.isArray(args) || args.length === 0 || (args.length === 1 && args[0] === '')) {
+        const parsedInput = this.parseInput(line, false);
+        if (parsedInput.cmds.length === 0) {
             this._cmdPending = false;
             // this.console.prompt();
             this.handleInput();
             return;
         }
-        if (args[0] === 'exit') {
-            this.console.exit();
-            return;
+        const cmds: { parsedCmd: IParsedCommand, env?: IVfsEnvironment, promise?: Promise<number> } [] = [];
+        for (const c of parsedInput.cmds) {
+            if (!c.valid) {
+                this._env.stderr.write('Error: invalid command ' + c.cmdString + '\n');
+                this._cmdPending = false;
+                this.handleInput();
+                return;
+            }
+            cmds.push({ parsedCmd: c });
         }
-        if (args[0] === 'help') {
-            this.help(args);
+        if (!parsedInput.valid) {
+            this._env.stderr.write('Error: invalid command\n');
+            this._cmdPending = false;
             this.handleInput();
             return;
         }
-
-        // const zeroWritable = new Writable( { write: function (chunk, enc, done) { done(); } });
-        const cmds: { cmd: VfsShellCommand, args: string [], env?: IVfsEnvironment, promise?: Promise<number> } [] = [];
-        do {
-            const cmdAlias = this._aliases[args[0]];
-            if (cmdAlias) {
-                args = cmdAlias.concat(args.slice(1));
-            }
-            const cmd = this._commands[args[0]];
-            if (!cmd) {
-                this._console.out.write('Error: unknown command\n');
-                this.console.prompt();
-                return;
-            }
-            const i = args.indexOf('|');
-            if (i >= 0) {
-                const nextArgs = args.splice(i);
-                nextArgs.shift();
-                cmds.push( { cmd: cmd, args: args });
-                args = nextArgs;
-            } else {
-                cmds.push( { cmd: cmd, args: args });
-                args = [];
-            }
-        } while (args.length > 0);
 
         for (let i = cmds.length - 1; i >= 0; i--) {
             const env: IVfsEnvironment = Object.assign( {}, this._env );
@@ -180,9 +133,13 @@ export class VfsShell {
         const cmdPromisses: Promise<number> [] = [];
         for (let i = 0; i < cmds.length; i++) {
            const c = cmds[i];
-           (<any>c.cmd)._env = c.env;
+           (<any>c.parsedCmd.cmd)._env = c.env;
            this._cmdPending = true;
-           c.promise = c.cmd.execute(c.args);
+           const options: IVfsCommandOptions = {};
+           for (const o of c.parsedCmd.options) {
+               options[o.name] = o;
+           }
+           c.promise = c.parsedCmd.cmd.execute(c.parsedCmd.args, options);
            cmdPromisses.push(c.promise);
         }
 
@@ -197,26 +154,256 @@ export class VfsShell {
             // this.console.prompt();
             this.handleInput();
         })
+
+    }
+
+    public exit (args: string [], options: IVfsCommandOptions): number {
+        this.console.exit();
+        return 0;
+    }
+
+    public completerLongOption (linePartial: string, callback: (err: any, result: CompleterResult) => void,
+                                cmd: VfsShellCommand, parsedCmd: IParsedCommand): boolean {
+        const i = linePartial.lastIndexOf('--');
+        if (i < 0) { return false; }
+        const optPartial = linePartial.substr(i + 2);
+        if (optPartial.match(/^[a-zA-Z]*$/)) {
+            const before = linePartial.substr(0, i + 1);
+            const optConfigs = cmd.optionConfig();
+            const hits: string [] = [];
+            for (const longName of Object.keys(optConfigs)) {
+                if (!optConfigs.hasOwnProperty(longName)) { continue; }
+                if (parsedCmd.options.findIndex( o => o.name === longName) === -1) {
+                    if (longName.indexOf(optPartial) === 0) {
+                        hits.push('--' + longName + ' ');
+                    }
+                }
+            }
+            callback(null, [ hits, '--' + optPartial ]);
+            return true;
+        }
+        return false;
+    }
+
+    public completerShortOption (linePartial: string, callback: (err: any, result: CompleterResult) => void,
+                                 cmd: VfsShellCommand, parsedCmd: IParsedCommand): boolean {
+        const i = linePartial.lastIndexOf('-');
+        if (i < 0) { return false; }
+
+        const optPartial = linePartial.substr(i + 1);
+        if (optPartial.match(/^[a-zA-Z]*$/)) {
+            const before = linePartial.substr(0, i + 1);
+            const optConfigs = cmd.optionConfig();
+            const hits: string [] = [];
+            for (const longName of Object.keys(optConfigs)) {
+                if (!optConfigs.hasOwnProperty(longName)) { continue; }
+                const optConfig = optConfigs[longName];
+                if (optPartial.indexOf(optConfig.short) < 0 && parsedCmd.options.findIndex( o => o.name === longName) < 0) {
+                    hits.push('-' + optConfig.short + ' (' + longName + ')');
+                }
+            }
+            if (hits.length > 0) {
+                hits.push('... type short');
+            }
+            callback(null, [ hits, '' ]);
+            return true;
+        }
+        return false;
     }
 
 
     public completer (linePartial: string, callback: (err: any, result: CompleterResult) => void ) {
-        const cmds: string [] = [ 'help', 'exit' ];
+        const parsedInput = this.parseInput(linePartial, true);
+        const parsedCmd = parsedInput.cmds[0];
+        if (parsedCmd && parsedCmd.cmd) {
+            const cmd = parsedCmd.cmd;
+            if (this.completerLongOption(linePartial, callback, cmd, parsedCmd)) { return; }
+            if (this.completerShortOption(linePartial, callback, cmd, parsedCmd)) { return; }
+            const completerResult = parsedCmd.cmd.completer(linePartial, parsedCmd);
+            callback(null, completerResult || [ [], linePartial]);
+            return;
+        }
+
+        const cmds: string [] = [ 'exit' ];
         for (const c in this._commands) {
             if (!this._commands.hasOwnProperty(c)) { continue; }
             cmds.push(this._commands[c].name);
         }
         cmds.sort();
-        if (linePartial === '') {
+        if (!parsedCmd || !parsedCmd.cmdString) {
             callback(null, [ cmds, '']);
+            return;
         }
-
-        const hits = cmds.filter( c => {
-            if (c.indexOf(linePartial) === 0) {
-                return c;
+        const cmdString = parsedCmd.cmdString;
+        const hits = cmds.filter( cmd => {
+            if (cmd.indexOf(cmdString) === 0) {
+                return cmd;
             }
         });
         callback(null, [ hits, linePartial]);
+    }
+
+
+    private splitString (str: string, startIndex: number): string [] {
+        const rv: string [] = [];
+        let s = '', mode = undefined;
+        for (let i = startIndex; i < str.length; i++) {
+            let c = str[i];
+            if (!mode && (c === ' ' || c === '\t' || c === '\0' )) {
+                if (s.length > 0) { rv.push(s); s = ''; }
+            } else if (!mode && (c === '"' || c === '\'')) {
+                mode = c;
+            } else if (mode && (c === '"' || c === '\'')) {
+                mode = undefined;
+                if (s.length > 0) { rv.push(s); s = ''; }
+            } else if (mode === '\'') {
+                s += c;
+            } else if (c === '$' && i < (rv.length - 1)) {
+                c = str[++i];
+                if (c === '?') {
+                    s += this._lastExitCode;
+                } else {
+                    s += '$' + c;
+                }
+            } else if (c === '\\' && i < (str.length - 1)) {
+                c = str[++i];
+                switch (c) {
+                   case 'n': s += '\n'; break;
+                   case 'r': s += '\r'; break;
+                   case 't': s += '\t'; break;
+                   case '$': s += '$'; break;
+                   case '0': s += '\0'; break;
+                   default:  s += '\\' + c;
+                }
+            } else {
+                s += c;
+            }
+        }
+        if (s.length > 0) {
+            rv.push(s);
+        }
+        return rv;
+    }
+
+    private splitArray (strArray: string [], separator: string): string[][] {
+        const rv: string[][] = [];
+        while (strArray.length > 0) {
+            const i = strArray.findIndex( s => s === separator);
+            if (i < 0) {
+                break;
+            }
+            rv.push(strArray.splice(0, i));
+            strArray.shift();
+        }
+        rv.push(strArray);
+        return rv;
+    }
+
+    private parseOption (args: string [], cmd: VfsShellCommand): IVfsCommandOption [] {
+        if (!Array.isArray(args) || args.length === 0 || !args[0].startsWith('-') || args[0] === '-') {
+            return undefined;
+        }
+        const optionConfig = cmd && cmd.optionConfig();
+
+        if (args[0].startsWith('--')) {
+            const long = args[0].substr(2);
+            args.shift();
+            const cfg = optionConfig && optionConfig[long];
+            if (long === '' || !cmd || !cfg) {
+                return [ { valid: false, name: long, long: long } ];
+            }
+            if (cfg.argCnt && cfg.argCnt > 0) {
+                if (args.length < cfg.argCnt) {
+                    return [ { valid: false, name: long, long: long } ];
+                }
+                return [ { valid: true, name: long, long: long, args: args.splice(0, cfg.argCnt) } ];
+            }
+            return [ { valid: true, name: long, long: long } ];
+        }
+
+        const shortOptions = args[0].substr(1);
+        args.shift();
+        const rv: IVfsCommandOption [] = [];
+        outerLoop: for (const o of shortOptions) {
+            if (!optionConfig) {
+                rv.push( { valid: false, short: o });
+            } else {
+                const keys = Object.keys(optionConfig);
+                for (const k of keys) {
+                    if (!optionConfig.hasOwnProperty(k)) { continue; }
+                    const cfg = optionConfig[k];
+                    if (cfg.short === o) {
+                        if (cfg.argCnt && cfg.argCnt > 0) {
+                           if (args.length < cfg.argCnt) {
+                               rv.push( { valid: false, name: k, short: o } );
+                           } else {
+                               rv.push( { valid: true, name: k, short: o, args: args.splice(0, cfg.argCnt) } );
+                           }
+                        } else {
+                           rv.push( { valid: true, name: k, short: o } );
+                        }
+                        continue outerLoop;
+                    }
+                }
+            }
+            rv.push( { valid: false, short: o });
+        }
+        return rv;
+    }
+
+    private parseCommand (args: string []): IParsedCommand {
+        const rv: IParsedCommand = { valid: false };
+
+        const cmdAlias = this._aliases[args[0]];
+        if (cmdAlias) {
+            rv.beforeAlias = args;
+            args = cmdAlias.concat(args.slice(1));
+        }
+        const cmd = this._commands[args[0]];
+        if (cmd) {
+          rv.cmd = cmd;
+        }
+        rv.cmdString = args[0];
+        args.shift();
+
+        rv.options = [];
+        while (true) {
+            const o = this.parseOption(args, cmd)
+            if (!o) { break; }
+            rv.options = rv.options.concat(o);
+        }
+
+        rv.args = args;
+        if (!rv.cmd) {
+            return rv;
+        }
+
+        rv.valid = true;
+        for (const o of rv.options) {
+           if (!o.valid) {
+               rv.valid = false;
+               break;
+           }
+        }
+        return rv;
+    }
+
+    private parseInput (line?: string, afterLastPipe?: boolean): IParsedCommands {
+        const parsedCommands: IParsedCommand [] = [];
+        const args = this.splitString(line, afterLastPipe ? line.lastIndexOf('|') + 1 : 0);
+        if (args.length === 0 || (args.length === 1 && args[0] === '')) {
+            return { valid: false, cmds: parsedCommands };
+        }
+        const cmds = this.splitArray(args, '|');
+
+        let valid = true;
+        for (const a of cmds) {
+            const cmd = this.parseCommand(a);
+            valid = valid && cmd.valid;
+            parsedCommands.push(cmd);
+        }
+
+        return { valid: valid, cmds: parsedCommands };
     }
 
     private cmdAlias (alias: string, args: string []): string {
@@ -273,17 +460,12 @@ export class VfsShell {
         return this._pwd;
     }
 
-    private help (args: string []) {
-        if (args.length === 1) {
+    private help (args: string [], options: IVfsCommandOptions): number {
+        if (args.length === 0) {
             const cmds = Object.keys(this._commands);
             cmds.push('exit');
-            cmds.push('help');
             cmds.sort();
             for (const c of cmds) {
-                if (c === 'help') {
-                    this._env.stdout.write(c + ' [command]\n');
-                    continue;
-                }
                 if (c === 'exit') {
                     this._env.stdout.write(c + '\n');
                     continue;
@@ -293,28 +475,28 @@ export class VfsShell {
                 this._env.stdout.write(cmd.name + ' ' + cmd.getSyntax() + '\n');
             }
         } else {
-            const c = args[1];
-            if (c === 'help' ) {
-               this._env.stdout.write(c + '\n   this command ...\n');
-            } else if (c === 'exit') {
-               this._env.stdout.write(c + '\n   exit from program\n');
-            } else {
-               const cmd = this._commands[c];
-               if (!cmd) {
-                   this._env.stdout.write('Unknown command\n');
-               } else {
-                   this._env.stdout.write(cmd.name + ' ' + cmd.getSyntax() + '\n');
-                   const help = cmd.getHelp();
-                   if (!Array.isArray(help)) {
-                      this._env.stdout.write('   ' + help + '\n');
-                   } else {
-                        for (const s of help) {
-                            this._env.stdout.write('   ' + s + '\n');
-                        }
-                   }
-               }
+            const c = args[0];
+            if (c === 'exit') {
+               this._env.stdout.write(c + '\n   exit the program');
             }
+            const cmd = this._commands[c];
+            if (!cmd) {
+                this._env.stdout.write('Unknown command\n');
+                return 1;
+            } else {
+                this._env.stdout.write(cmd.name + ' ' + cmd.getSyntax() + '\n');
+                const help = cmd.getHelp();
+                if (!Array.isArray(help)) {
+                    this._env.stdout.write('   ' + help + '\n');
+                } else {
+                    for (const s of help) {
+                        this._env.stdout.write('   ' + s + '\n');
+                    }
+                }
+            }
+
         }
+        return 0;
     }
 }
 

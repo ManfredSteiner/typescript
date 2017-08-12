@@ -111,6 +111,7 @@
       "check-type"
     ],
     // custom-rules
-    "no-imports": false
+    "no-imports": false,
+    "no-unused-variable": true
   }
 }

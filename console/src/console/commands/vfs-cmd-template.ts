@@ -1,20 +1,19 @@
 
-import { IVfsShellCmds, VfsShellCommand } from '../vfs-shell-command';
+import { IVfsShellCmds, VfsShellCommand, IVfsCommandOptionConfig, IVfsCommandOptions } from '../vfs-shell-command';
 
 export class VfsCmdTemplate extends VfsShellCommand {
     constructor (shellCmds?: IVfsShellCmds) {
         super('template');
     }
 
-    public execute (args: string []): Promise<number> {
-        const options = this.parseOptions(args, { noLine: { short: 'n' }});
-        if (!options) {
-            this.env.stderr.write('Error (template): invalid options');
-            this.println();
-            this.end();
-            return Promise.reject(1);
-        }
-        if (args.length !== 2) {
+    public optionConfig (): IVfsCommandOptionConfig {
+      return {
+         noLine: { short: 'n', argCnt: 0 },
+      };
+    }
+
+    public execute (args: string [], options: IVfsCommandOptions): Promise<number> {
+        if (args.length !== 1) {
             this.env.stderr.write('invalid arguments\n');
             return Promise.reject(1);
         }
