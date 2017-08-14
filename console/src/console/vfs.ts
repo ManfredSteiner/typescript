@@ -1,91 +1,165 @@
-
+import { VfsAbstractNode } from './vfs-filesystem';
+import * as fs from 'fs';
 import * as stream from 'stream';
+import * as events from 'events';
+import * as util from 'util';
 
-import { VfsAbstractNode, VfsDirectoryNode } from './vfs-node';
-import { IVfsShellUser } from './vfs-shell-user';
+export type PathLike = fs.PathLike;
 
-// import * as debugsx from 'debug-sx';
-// const debug: debugsx.ISimpleLogger = debugsx.createSimpleLogger('console:Vfs');
-
-export class Vfs {
-    private static _instance: Vfs;
-
-    public static get Instance (): Vfs {
-        return this._instance || (this._instance = new this());
-    }
-
-    // ****************************************************************
-    private _root: VfsDirectoryNode;
-
-    private constructor () {
-        this._root = new VfsRootDirectory();
-    }
-
-    public get root () {
-        return this._root;
-    }
-
-    public refresh (): Promise<any> {
-        return this._root.refreshAll();
-    }
-
-    public getChildOld (absolutPath: string): VfsAbstractNode {
-        if (!absolutPath.startsWith('/')) {
-            return undefined;
-        }
-        return this._root.getChild(absolutPath.substr(1), null);
-    }
-
-    public getChild (path: string, user: IVfsShellUser, start: VfsDirectoryNode): VfsAbstractNode {
-        if (path.startsWith('/')) {
-            return this._root.getChild(path.substr(1), user);
-        }
-        if (path === '~') {
-            return this.getHomeDirectory(user);
-        }
-        if (path.startsWith('~/')) {
-            return this.getHomeDirectory(user).getChild(path.substr(2), user);
-        }
-        return start.getChild(path, user);
-    }
-
-    public getChilds (path: string, user: IVfsShellUser, start: VfsDirectoryNode): VfsAbstractNode [] {
-        if (path.startsWith('/')) {
-            return this._root.getChilds(path.substr(1), user);
-        }
-        if (path === '~') {
-            return [ this.getHomeDirectory(user) ];
-        }
-        if (path.startsWith('~/')) {
-            return this.getHomeDirectory(user).getChilds(path.substr(2), user);
-        }
-        return start.getChilds(path, user);
-    }
-
-    public getDirectory (path: string, user: IVfsShellUser, start: VfsDirectoryNode): VfsDirectoryNode {
-        const rv = this.getChild (path, user, start);
-        if (rv instanceof VfsDirectoryNode) {
-            return rv;
-        } else {
-            return undefined;
-        }
-    }
-
-    public getHomeDirectory(user: IVfsShellUser): VfsDirectoryNode {
-        return this.getDirectory(user.getHome(), user, undefined) || this._root;
-    }
-
+export interface Stats {
+    uid: number;
+    gid: number;
+    size: number;
+    atime: Date;
+    mtime: Date;
+    ctime: Date;
+    birthtime: Date;
+    fsstats: fs.Stats;
+    typeChar: string;
+    isFile(): boolean;
+    isDirectory(): boolean;
+    isBlockDevice(): boolean;
+    isCharacterDevice(): boolean;
+    isSymbolicLink(): boolean;
+    isFIFO(): boolean;
+    isSocket(): boolean;
+    isFsStat(): boolean;
 }
 
-class VfsRootDirectory extends VfsDirectoryNode {
-    constructor () {
-        super('/', null);
-    }
-
-    public refresh (): Promise<VfsRootDirectory> {
-        return Promise.resolve(this);
-    }
-
+export interface ReadStream extends stream.Readable {
+    bytesRead: number;
+    path: string | Buffer;
+    close(): void;
+    destroy(): void;
 }
+
+export interface WriteStream extends stream.Writable {
+    bytesWritten: number;
+    path: string | Buffer;
+    close(): void;
+}
+
+// export function close (fd: number): Promise<void> {
+//     return Promise.resolve();
+// }
+
+// export function open (path: PathLike, flags: string | number, mode: string | number | undefined | null): Promise<number> {
+//     return new Promise<number>( (resolve, reject) => {
+//         resolve(-1);
+//     });
+// }
+
+export function readFile (path: PathLike | number | VfsAbstractNode,
+                          options?: { encoding?: string | null; flag?: string; } | string | undefined | null): Promise<string | Buffer> {
+    if (path instanceof VfsAbstractNode) {
+        return path.readFile(options);
+    }
+    return new Promise<string | Buffer>( (resolve, reject) => {
+        resolve('');
+    });
+}
+
+export function stat (path: PathLike): Promise<Stats> {
+    return new Promise<Stats>( (resolve, reject) => {
+        resolve();
+    });
+}
+
+export function writeFile (path: PathLike | number | VfsAbstractNode, data: any,
+                           options: { encoding?: string | null; mode?: number | string; flag?: string; }
+                                    | string | undefined | null): Promise<void> {
+    return new Promise<void>( (resolve, reject) => {
+        resolve();
+    });
+}
+
+export function createReadStream (path: PathLike | VfsAbstractNode, options?: string | {
+        flags?: string;
+        encoding?: string;
+        fd?: number;
+        mode?: number;
+        autoClose?: boolean;
+        start?: number;
+        end?: number;
+    }): ReadStream {
+    return undefined;
+}
+
+export function createWriteStream(path: PathLike | VfsAbstractNode, options?: string | {
+        flags?: string;
+        defaultEncoding?: string;
+        fd?: number;
+        mode?: number;
+        autoClose?: boolean;
+        start?: number;
+    }): WriteStream {
+    return undefined;
+}
+
+
+
+export class VfsUser {
+  private _uid: number;
+  private _gid: number;
+  private _name: string;
+  private _home: string;
+  private _isAdmin: boolean;
+
+  public constructor (uid: number, gid: number, name: string, home: string, isAdmin?: boolean) {
+      this._uid = uid;
+      this._gid = gid;
+      this._name = name;
+      this._home = home;
+      this._isAdmin = isAdmin;
+  }
+
+  public get uid (): number {
+      return this._uid;
+  }
+
+  public get gid (): number {
+      return this._gid;
+  }
+
+  public get name (): string {
+      return this._name;
+  }
+
+  public get home (): string {
+      return this._home;
+  }
+
+  public isAdmin (): boolean {
+      return this._isAdmin === true;
+  }
+}
+
+
+export class VfsGroup {
+  private _gid: number;
+  private _name: string;
+  private _members: VfsUser [];
+
+
+  public constructor (gid: number, name: string, members: VfsUser []) {
+      this._gid = gid;
+      this._name = name;
+      this._members = members;
+
+  }
+
+  public get gid (): number {
+      return this._gid;
+  }
+
+  public get name (): string {
+      return this._name;
+  }
+
+  public get members (): VfsUser [] {
+      return this._members;
+  }
+}
+
 
 

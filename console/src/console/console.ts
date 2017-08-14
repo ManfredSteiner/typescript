@@ -2,8 +2,8 @@
 // Node.js modules
 import { ReadLine, createInterface, CompleterResult } from 'readline';
 
+import * as vfs from './vfs';
 import { VfsShell, IVfsConsole } from './vfs-shell';
-import { VfsShellUser, IVfsShellUser } from './vfs-shell-user';
 
 import * as debugsx from 'debug-sx';
 const debug: debugsx.ISimpleLogger = debugsx.createSimpleLogger('console:console');
@@ -15,10 +15,12 @@ export class Console {
     private _shell: VfsShell;
     private _exitCallback: (exitCode: number) => void;
     private _waitForResponse: (response: string) => void;
+    private _osFsBase: string;
 
-    constructor (name: string, version: string) {
+    constructor (name: string, version: string, osFsBase?: string) {
 
         this._version = version;
+        this._osFsBase = osFsBase || '/tmp';
         this._out = process.stdout;
 
         this._readLine = createInterface(
@@ -30,7 +32,7 @@ export class Console {
             });
         this._readLine.setPrompt('> ');
         this._readLine.on('line', this.parseInput.bind(this));
-        this._shell = new VfsShell(this, name || '?', new VfsShellUser('admin', true, '/'));
+        this._shell = new VfsShell(this, name || '?', new vfs.VfsUser(0, 0, 'admin', '/', true), osFsBase);
         this.setExitCallback(process.exit);
     }
 
@@ -40,6 +42,10 @@ export class Console {
 
     public get out () {
         return this._out;
+    }
+
+    public refresh (): Promise<any> {
+        return this._shell.refresh();
     }
 
     public prompt (preserveCursor?: boolean): void {

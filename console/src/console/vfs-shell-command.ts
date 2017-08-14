@@ -1,4 +1,4 @@
-import { VfsAbstractNode, VfsDirectoryNode } from './vfs-node';
+import { VfsAbstractNode, VfsDirectoryNode } from './vfs-filesystem';
 
 import { sprintf } from 'sprintf-js';
 import * as util from 'util';
@@ -16,7 +16,8 @@ export abstract class VfsShellCommand {
     constructor (name: string) {
       this._name = name;
     }
-public get name () {
+
+    public get name () {
         return this._name;
     }
 

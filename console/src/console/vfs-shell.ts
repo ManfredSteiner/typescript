@@ -1,10 +1,10 @@
 
-import { Vfs } from './vfs';
-import { VfsAbstractNode, VfsDirectoryNode, VfsDataNode, VfsStaticTextFile } from './vfs-node';
-import { IVfsShellUser } from './vfs-shell-user';
+import * as vfs from './vfs';
+import { VfsFilesystem, VfsAbstractNode, VfsDirectoryNode, VfsStaticTextFile } from './vfs-filesystem';
 import { IVfsEnvironment, IVfsShellCmds, PipeReadable, PipeWritable, VfsShellCommand,
          IParsedCommands, IParsedCommand, IVfsCommandOption, IVfsCommandOptions } from './vfs-shell-command';
 import { addDefaultCommands } from './commands/vfs-commands';
+import { VfsOsFsBaseDirectory } from './vfs-filesystem';
 
 import { Readable, Writable } from 'stream';
 import { CompleterResult } from 'readline';
@@ -16,7 +16,7 @@ export class VfsShell {
     private _pwd: VfsDirectoryNode;
     private _console: IVfsConsole;
     private _name: string;
-    private _user: IVfsShellUser;
+    private _user: vfs.VfsUser;
     private _commands: { [ key: string ]: VfsShellCommand } = {};
     private _cmdPending: boolean;
     private _lastExitCode: number;
@@ -25,16 +25,16 @@ export class VfsShell {
     private _shellCmds: IVfsShellCmds;
     private _aliases: { [ key: string ]: string []};
 
-    public constructor (console: IVfsConsole, name: string, user: IVfsShellUser) {
-        const home = Vfs.Instance.getHomeDirectory(user);
-        this._pwd = home || Vfs.Instance.root;
+    public constructor (console: IVfsConsole, name: string, user: vfs.VfsUser, osFsBase?: string) {
+        this._pwd = VfsFilesystem.Instance.getDirectory(user.home, user, VfsFilesystem.Instance.root) || VfsFilesystem.Instance.root;
         this._console = console;
         this._name = name;
         this._user = user;
         this._env = { stdout: process.stdout, stdin: process.stdin, stderr: process.stderr };
         this._lastExitCode = 0;
 
-        Vfs.Instance.root.addChild(new VfsDirectorySys('sys', Vfs.Instance.root));
+        VfsFilesystem.Instance.root.addChild(new VfsOsFsBaseDirectory('osfs', VfsFilesystem.Instance.root, osFsBase || '/tmp'));
+        VfsFilesystem.Instance.root.addChild(new VfsDirectorySys('sys', VfsFilesystem.Instance.root));
 
         this._shellCmds = {
             alias: this.cmdAlias.bind(this),
@@ -50,6 +50,11 @@ export class VfsShell {
         this.console.prompt();
     }
 
+    public refresh (): Promise<any> {
+        return this._pwd.refreshAll();
+    }
+
+
     public get console (): IVfsConsole {
         return this._console;
     }
@@ -59,11 +64,11 @@ export class VfsShell {
     }
 
     public setPrompt (): void {
-        const promptPre = this._user.getName() + '@' + this._name + ':';
+        const promptPre = this._user.name + '@' + this._name + ':';
         const promptPost = this._user.isAdmin ? '# ' : '$ ';
         let path = this._pwd.fullName;
-        if (this._user.getHome() !== '/' && path.startsWith(this._user.getHome())) {
-            path = '~' + path.substr(this._user.getHome().length);
+        if (this._user.home !== '/' && path.startsWith(this._user.home)) {
+            path = '~' + path.substr(this._user.home.length);
         }
         const prompt = promptPre + path + promptPost;
         this._console.setPrompt(prompt);
@@ -439,10 +444,10 @@ export class VfsShell {
 
     private cmdCd (path: string): string {
         if (!path) {
-            this._pwd = Vfs.Instance.getHomeDirectory(this._user);
+            this._pwd = VfsFilesystem.Instance.getHomeDirectory(this._user);
             return undefined;
         }
-        const p = Vfs.Instance.getDirectory(path, this._user, this._pwd);
+        const p = VfsFilesystem.Instance.getDirectory(path, this._user, this._pwd);
         if (!p) {
             return '\'' + path + '\' not found!';
         }
@@ -452,7 +457,7 @@ export class VfsShell {
     }
 
     private cmdFiles (path: string): VfsAbstractNode [] {
-        const p = Vfs.Instance.getChilds(path, this._user, this._pwd);
+        const p = VfsFilesystem.Instance.getChilds(path, this._user, this._pwd);
         return p;
     }
 

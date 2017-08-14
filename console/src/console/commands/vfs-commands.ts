@@ -1,7 +1,7 @@
 
+import * as vfs from '../vfs';
 import { VfsShellCommand, IVfsShellCmds, IVfsCommandOptionConfig, IParsedCommand, IVfsCommandOptions } from '../vfs-shell-command';
-import { Vfs } from '../vfs';
-import { VfsAbstractNode, VfsDataNode, VfsDirectoryNode } from '../vfs-node';
+import { VfsAbstractNode, VfsDirectoryNode } from '../vfs-filesystem';
 import { VfsCmdTest } from './vfs-cmd-test';
 
 import { CompleterResult } from 'readline';
@@ -224,16 +224,26 @@ class VfsCmdCat extends VfsShellCommand {
         }
         for (let i = 0; i < args.length; i++) {
             const resources = this._files(args[i]);
-            if (Array.isArray(resources) && resources.length === 1 && resources[0] instanceof VfsDataNode) {
-                (<VfsDataNode<any>>resources[0]).printData(this.env.stdout);
-            } else {
+            if (Array.isArray(resources) && resources.length === 0) {
                 this.end('Error (cat): \'' + args[i] + '\' not found')
+                return Promise.reject(2);
+            } else if (Array.isArray(resources) && resources.length === 1 && !resources[0].stat.isFile()) {
+                this.end('Error (cat): \'' + args[i] + '\' is not a file')
+                return Promise.reject(2);
+            } else if (Array.isArray(resources) && resources.length === 1 && resources[0].stat.isFile()) {
+                return new Promise<number>( (resolve, reject) => {
+                    vfs.readFile(resources[i]).then( (result) => {
+                        this.env.stdout.write(result);
+                        this.env.stdout.write('\n');
+                        this.end();
+                        resolve(0);
+                    });
+                });
+            } else {
+                this.end('Error (cat): \'' + args[i] + '\' multiple files, select one')
                 return Promise.reject(2);
             }
         }
-        this.env.stdout.write('\n');
-        this.end();
-        return Promise.resolve(0);
     }
 
     public getHelp (): string {
@@ -306,10 +316,11 @@ class VfsCmdLs extends VfsShellCommand {
                 rv = 2;
             } else {
                 for (const r of resources) {
-                    if (r instanceof VfsDirectoryNode) {
+                    const stat = r.stat;
+                    if (stat && stat.isDirectory()) {
                         if (options.directory) {
                             if (asLine) {
-                                this.println(r.typeShortcut + '   ' + r.name);
+                                this.println(stat.typeChar + '   ' + r.name);
                             } else {
                                 this.print(r.name + ' ');
                             }
@@ -320,15 +331,21 @@ class VfsCmdLs extends VfsShellCommand {
                             const childs = this._files(path + '/*') || [];
                             for (const c of childs) {
                                 if (asLine) {
-                                    this.println(c.typeShortcut + '   ' + c.name);
+                                    this.println(stat.typeChar + '   ' + c.name);
                                 } else {
                                     this.print(c.name + ' ');
                                 }
                             }
                         }
+                    } else if (stat && stat.isFile()) {
+                        if (asLine) {
+                            this.println(stat.typeChar + '   ' + r.name);
+                        } else {
+                            this.print(r.name + ' ');
+                        }
                     } else {
                         if (asLine) {
-                            this.println(r.typeShortcut + '   ' + r.name);
+                            this.println('?   ' + r.name);
                         } else {
                             this.print(r.name + ' ');
                         }
