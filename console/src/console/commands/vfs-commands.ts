@@ -227,10 +227,10 @@ class VfsCmdCat extends VfsShellCommand {
             if (Array.isArray(resources) && resources.length === 0) {
                 this.end('Error (cat): \'' + args[i] + '\' not found')
                 return Promise.reject(2);
-            } else if (Array.isArray(resources) && resources.length === 1 && !resources[0].stat.isFile()) {
+            } else if (Array.isArray(resources) && resources.length === 1 && !resources[0].stats.isFile()) {
                 this.end('Error (cat): \'' + args[i] + '\' is not a file')
                 return Promise.reject(2);
-            } else if (Array.isArray(resources) && resources.length === 1 && resources[0].stat.isFile()) {
+            } else if (Array.isArray(resources) && resources.length === 1 && resources[0].stats.isFile()) {
                 return new Promise<number>( (resolve, reject) => {
                     vfs.readFile(resources[i]).then( (result) => {
                         this.env.stdout.write(result);
@@ -316,11 +316,11 @@ class VfsCmdLs extends VfsShellCommand {
                 rv = 2;
             } else {
                 for (const r of resources) {
-                    const stat = r.stat;
-                    if (stat && stat.isDirectory()) {
+                    const stats = r.stats;
+                    if (stats && stats.isDirectory()) {
                         if (options.directory) {
                             if (asLine) {
-                                this.println(stat.typeChar + '   ' + r.name);
+                                this.println(stats.typeChar + '   ' + r.name);
                             } else {
                                 this.print(r.name + ' ');
                             }
@@ -331,15 +331,15 @@ class VfsCmdLs extends VfsShellCommand {
                             const childs = this._files(path + '/*') || [];
                             for (const c of childs) {
                                 if (asLine) {
-                                    this.println(stat.typeChar + '   ' + c.name);
+                                    this.println(c.stats.typeChar + '   ' + c.name);
                                 } else {
                                     this.print(c.name + ' ');
                                 }
                             }
                         }
-                    } else if (stat && stat.isFile()) {
+                    } else if (stats && stats.isFile()) {
                         if (asLine) {
-                            this.println(stat.typeChar + '   ' + r.name);
+                            this.println(stats.typeChar + '   ' + r.name);
                         } else {
                             this.print(r.name + ' ');
                         }

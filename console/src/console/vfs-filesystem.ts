@@ -1,6 +1,9 @@
 
 import * as fs from 'fs';
+import * as util from 'util';
+
 import * as vfs from './vfs';
+
 
 export class VfsFilesystem {
     private static _instance: VfsFilesystem;
@@ -24,12 +27,6 @@ export class VfsFilesystem {
         return this._root.refreshAll();
     }
 
-    public getChildOld (absolutPath: string): VfsAbstractNode {
-        if (!absolutPath.startsWith('/')) {
-            return undefined;
-        }
-        return this._root.getChild(absolutPath.substr(1), null);
-    }
 
     public getChild (path: string, user: vfs.VfsUser, start: VfsDirectoryNode): VfsAbstractNode {
         if (path.startsWith('/')) {
@@ -110,7 +107,6 @@ export abstract class VfsAbstractNode {
     }
 
     public abstract refresh (): Promise<VfsAbstractNode>;
-    public abstract readFile (options?: { encoding?: string | null; flag?: string; } | string | undefined | null): Promise<string | Buffer>;
 
     public get name(): string {
         return this._name;
@@ -120,7 +116,7 @@ export abstract class VfsAbstractNode {
         return this._parent;
     }
 
-    public get stat(): vfs.Stats {
+    public get stats(): vfs.Stats {
         return this._stats;
     }
 
@@ -134,6 +130,24 @@ export abstract class VfsAbstractNode {
         return rv;
     }
 
+    public readFile (options?: { encoding?: string | null; flag?: string; } | string | undefined | null): Promise<string | Buffer> {
+        return Promise.reject('readFile() not supported')
+    }
+
+    public writeFile (data: any, options: { encoding?: string | null; mode?: number | string; flag?: string; }
+                                          | string | undefined | null): Promise<void> {
+        return Promise.reject('writeFile() not supported');
+    }
+
+    public createReadStream (options?: string | { flags?: string; encoding?: string; fd?: number; mode?: number;
+                                                  autoClose?: boolean; start?: number; end?: number; }): fs.ReadStream {
+        throw new Error('createReadStream() not supported');
+    }
+
+    public createWriteStream (options?: string | { flags?: string; defaultEncoding?: string; fd?: number; mode?: number;
+                                                   autoClose?: boolean; start?: number; }): fs.WriteStream {
+        throw new Error('createWriteStream() not supported');
+    }
 }
 
 
@@ -144,8 +158,8 @@ export abstract class VfsAbstractNode {
 export abstract class VfsDirectoryNode extends VfsAbstractNode {
     private _childs: VfsAbstractNode[];
 
-    constructor(name: string, parent: VfsDirectoryNode) {
-        super(name, parent, new VfsDirectoryNodeStats());
+    constructor(name: string, parent: VfsDirectoryNode, stats?: vfs.Stats) {
+        super(name, parent, stats ||  new VfsDirectoryNodeStats());
         this._childs = [];
     }
 
@@ -246,8 +260,12 @@ export abstract class VfsDirectoryNode extends VfsAbstractNode {
         }
     }
 
-    public addChild (child: VfsAbstractNode) {
-        this._childs.push(child);
+    public addChild (child: VfsAbstractNode, position?: number) {
+        if (position === undefined || position < 0 || position >= this._childs.length) {
+            this._childs.push(child);
+        } else {
+            this.childs.splice(position, 0, child);
+        }
     }
 
     public removeChild (child: VfsAbstractNode): boolean {
@@ -296,52 +314,86 @@ export class VfsStaticTextFile extends VfsAbstractNode {
 }
 
 
-export class VfsOsFsBaseDirectory extends VfsDirectoryNode {
+export class VfsOsFsDirectory extends VfsDirectoryNode {
 
     private _base: string;
 
-    constructor (name: string, parent: VfsDirectoryNode, base?: string) {
-        super(name, parent);
+    constructor (name: string, parent: VfsDirectoryNode, base: string, stats?: vfs.Stats) {
+        super(name, parent, stats || new VfsOsFsStats(fs.statSync(base)));
         this._base = base;
     }
 
+    public getChild (path: string, user: vfs.VfsUser): VfsAbstractNode {
+        this.updateChilds();
+        return super.getChild(path, user);
+    }
+
+    public getChilds (path: string, user: vfs.VfsUser): VfsAbstractNode [] {
+        this.updateChilds();
+        return super.getChilds(path, user);
+    }
+
     public refresh(): Promise<VfsAbstractNode> {
-        return new Promise<VfsAbstractNode>( (resolve, reject) => {
-            fs.readdir(this._base, (err, files) => {
-                if (err) { reject(err); return; }
-                const promisses: Promise<any> [] = [];
-                for (const f of files) {
-                    promisses.push(this._refreshFile(f));
-                }
-                Promise.all(promisses).then( () => resolve(this)).catch( e => reject(e) );
-            });
-        });
+        return Promise.resolve(this);
     }
 
-
-    private _refreshFile (name: string): Promise<VfsAbstractNode> {
-        return new Promise<VfsAbstractNode>( (resolve, reject) => {
-            fs.stat(this._base + '/' + name, (err, stat) => {
-                if (stat.isFile()) {
-                    return new VfsOsFsFile(name, this.parent, this._base, stat);
-                } else if (stat.isDirectory) {
-                    return new VfsOsFsDirectory(name, this.parent, this._base, stat);
+    private updateChilds () {
+        const files = fs.readdirSync(this._base);
+        files.sort();
+        const childs: string [] = [];
+        for (const c of this.childs) {
+            childs.push(c.name);
+        }
+        childs.sort();
+        for (let i = 0, j = 0; i < files.length || j < childs.length; i++, j++) {
+            const fn = i < files.length ? files[i] : undefined;
+            const cn = j < childs.length ? childs[j] : undefined;
+            if (!cn || (fn && fn < cn)) {
+                const c = this.createChild(fn);
+                if (c) {
+                    this.addChild(c, j);
+                    childs.splice(j, 0, fn);
                 } else {
-                    // type (symbolic link, ...) not supported
-                    resolve(undefined);
+                  j--;
                 }
-            });
-        });
+            } else if (!fn || (cn && fn > cn)) {
+                this.removeChild(this.childs[j]);
+                i--;
+            }
+        }
     }
+
+    private createChild (name: string): VfsAbstractNode {
+        const fileName = this._base + '/' + name;
+        const stats = fs.lstatSync(fileName);
+        if (stats.isSymbolicLink()) {
+            return undefined;
+        } else if (stats.isSocket()) {
+            return undefined;
+        } else if (stats.isCharacterDevice()) {
+            return undefined;
+        } else if (stats.isBlockDevice()) {
+            return undefined;
+        } else if (stats.isFIFO()) {
+            return undefined;
+        } else if (stats.isDirectory()) {
+           return new VfsOsFsDirectory(name, this, this._base + '/' + name, new VfsOsFsStats(stats));
+        } else if (stats.isFile()) {
+            return new VfsOsFsFile(name, this, this._base, new VfsOsFsStats(stats));
+        }
+        return undefined;
+    }
+
 }
 
 
 class VfsOsFsFile extends VfsAbstractNode {
 
-    private _path: string | Buffer | number;
+    private _base: string;
 
-    constructor (name: string, parent: VfsDirectoryNode, osFsDirectory: string, stat: fs.Stats) {
-        super(name, parent, new VfdOsFsStats(stat));
+    constructor (name: string, parent: VfsDirectoryNode, base: string, stats?: vfs.Stats) {
+        super(name, parent, stats || new VfsOsFsStats(fs.statSync(base + '/' + name)));
+        this._base = base;
     }
 
     public refresh(): Promise<VfsAbstractNode> {
@@ -349,20 +401,21 @@ class VfsOsFsFile extends VfsAbstractNode {
     }
 
     public readFile (options?: { encoding?: string | null; flag?: string; } | string | undefined | null): Promise<string | Buffer> {
-        return fs.readFile.__promisify__(this._path, options);
+        const fileName = this._base + '/' + this.name;
+        return util.promisify(fs.readFile)(fileName, options);
     }
 }
 
 
-class VfsOsFsDirectory extends VfsDirectoryNode {
-    constructor (name: string, parent: VfsDirectoryNode, osFsDirectory: string, stat: fs.Stats) {
-        super(name, parent);
-    }
+// class VfsOsFsDirectory extends VfsDirectoryNode {
+//     constructor (name: string, parent: VfsDirectoryNode, stats: fs.Stats) {
+//         super(name, parent, new VfdOsFsStats(stats));
+//     }
 
-    public refresh (): Promise<VfsRootDirectory> {
-        return Promise.resolve(this);
-    }
-}
+//     public refresh (): Promise<VfsRootDirectory> {
+//         return Promise.resolve(this);
+//     }
+// }
 
 abstract class VfsAbstractNodeStats implements vfs.Stats {
     protected _atime: Date;
@@ -383,6 +436,13 @@ abstract class VfsAbstractNodeStats implements vfs.Stats {
 
     public get uid (): number { return -1; }
     public get gid (): number { return -1; }
+    public get dev (): number { return -1; };
+    public get ino (): number { return -1; };
+    public get mode (): number { return -1; };
+    public get nlink (): number { return -1; };
+    public get rdev (): number { return -1; };
+    public get blksize (): number { return -1; };
+    public get blocks (): number { return -1; };
     public get fsstats (): fs.Stats { return undefined };
     public get atime (): Date { return this._atime; }
     public get mtime (): Date { return this._mtime; }
@@ -424,7 +484,7 @@ class VfsFileStats extends VfsAbstractNodeStats {
     }
 }
 
-class VfdOsFsStats extends VfsAbstractNodeStats {
+class VfsOsFsStats extends VfsAbstractNodeStats {
 
     private _fsstats: fs.Stats;
 
@@ -451,7 +511,7 @@ class VfdOsFsStats extends VfsAbstractNodeStats {
     public isFsStat(): boolean { return true; }
 
     public get typeChar (): string {
-        if (this.isFile)  {
+        if (this.isFile())  {
             return '-';
         } else if (this.isDirectory()) {
             return 'd';

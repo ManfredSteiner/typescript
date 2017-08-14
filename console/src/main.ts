@@ -50,7 +50,7 @@ import { Console } from './console/console';
 const configConsole = nconf.get('console');
 if (configConsole) {
     const appConsole = new Console(configConsole.name, '0.0', path.join(__dirname, '../osfs'));
-    appConsole.refresh().then( () => console.log('refresh done')).catch(err => debug.warn(err));
+    appConsole.refresh().catch(err => debug.warn(err));
 }
 
 // import * as vfs from './console/vfs';

@@ -4,7 +4,7 @@ import { VfsFilesystem, VfsAbstractNode, VfsDirectoryNode, VfsStaticTextFile } f
 import { IVfsEnvironment, IVfsShellCmds, PipeReadable, PipeWritable, VfsShellCommand,
          IParsedCommands, IParsedCommand, IVfsCommandOption, IVfsCommandOptions } from './vfs-shell-command';
 import { addDefaultCommands } from './commands/vfs-commands';
-import { VfsOsFsBaseDirectory } from './vfs-filesystem';
+import { VfsOsFsDirectory } from './vfs-filesystem';
 
 import { Readable, Writable } from 'stream';
 import { CompleterResult } from 'readline';
@@ -33,7 +33,7 @@ export class VfsShell {
         this._env = { stdout: process.stdout, stdin: process.stdin, stderr: process.stderr };
         this._lastExitCode = 0;
 
-        VfsFilesystem.Instance.root.addChild(new VfsOsFsBaseDirectory('osfs', VfsFilesystem.Instance.root, osFsBase || '/tmp'));
+        VfsFilesystem.Instance.root.addChild(new VfsOsFsDirectory('osfs', VfsFilesystem.Instance.root, osFsBase || '/tmp'));
         VfsFilesystem.Instance.root.addChild(new VfsDirectorySys('sys', VfsFilesystem.Instance.root));
 
         this._shellCmds = {

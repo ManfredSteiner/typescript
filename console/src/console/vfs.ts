@@ -6,94 +6,67 @@ import * as util from 'util';
 
 export type PathLike = fs.PathLike;
 
-export interface Stats {
-    uid: number;
-    gid: number;
-    size: number;
-    atime: Date;
-    mtime: Date;
-    ctime: Date;
-    birthtime: Date;
-    fsstats: fs.Stats;
-    typeChar: string;
-    isFile(): boolean;
-    isDirectory(): boolean;
-    isBlockDevice(): boolean;
-    isCharacterDevice(): boolean;
-    isSymbolicLink(): boolean;
-    isFIFO(): boolean;
-    isSocket(): boolean;
-    isFsStat(): boolean;
+export interface Stats extends fs.Stats {
+     typeChar: string;
 }
 
-export interface ReadStream extends stream.Readable {
-    bytesRead: number;
-    path: string | Buffer;
-    close(): void;
-    destroy(): void;
-}
 
-export interface WriteStream extends stream.Writable {
-    bytesWritten: number;
-    path: string | Buffer;
-    close(): void;
-}
-
-// export function close (fd: number): Promise<void> {
-//     return Promise.resolve();
-// }
-
-// export function open (path: PathLike, flags: string | number, mode: string | number | undefined | null): Promise<number> {
-//     return new Promise<number>( (resolve, reject) => {
-//         resolve(-1);
-//     });
-// }
 
 export function readFile (path: PathLike | number | VfsAbstractNode,
                           options?: { encoding?: string | null; flag?: string; } | string | undefined | null): Promise<string | Buffer> {
     if (path instanceof VfsAbstractNode) {
         return path.readFile(options);
     }
-    return new Promise<string | Buffer>( (resolve, reject) => {
-        resolve('');
-    });
+    return fs.readFile.__promisify__(path, options);
 }
 
-export function stat (path: PathLike): Promise<Stats> {
-    return new Promise<Stats>( (resolve, reject) => {
-        resolve();
-    });
+export function stats (path: PathLike | VfsAbstractNode): Promise<fs.Stats> {
+    if (path instanceof VfsAbstractNode) {
+        return Promise.resolve(path.stats);
+    }
+    return fs.stat.__promisify__(path);
 }
 
 export function writeFile (path: PathLike | number | VfsAbstractNode, data: any,
                            options: { encoding?: string | null; mode?: number | string; flag?: string; }
                                     | string | undefined | null): Promise<void> {
-    return new Promise<void>( (resolve, reject) => {
-        resolve();
-    });
+    if (path instanceof VfsAbstractNode) {
+        return path.writeFile(data, options);
+    }
+    return fs.writeFile.__promisify__(path, data, options);
 }
 
-export function createReadStream (path: PathLike | VfsAbstractNode, options?: string | {
-        flags?: string;
-        encoding?: string;
-        fd?: number;
-        mode?: number;
-        autoClose?: boolean;
-        start?: number;
-        end?: number;
-    }): ReadStream {
-    return undefined;
+export function createReadStream (path: PathLike | VfsAbstractNode,
+                                  options?: string |
+                                            {
+                                                flags?: string;
+                                                encoding?: string;
+                                                fd?: number;
+                                                mode?: number;
+                                                autoClose?: boolean;
+                                                start?: number;
+                                                end?: number;
+                                            }): fs.ReadStream {
+    if (path instanceof VfsAbstractNode) {
+        return path.createReadStream(options);
+    }
+    return fs.createReadStream(path, options);
 }
 
-export function createWriteStream(path: PathLike | VfsAbstractNode, options?: string | {
-        flags?: string;
-        defaultEncoding?: string;
-        fd?: number;
-        mode?: number;
-        autoClose?: boolean;
-        start?: number;
-    }): WriteStream {
-    return undefined;
+export function createWriteStream (path: PathLike | VfsAbstractNode,
+                                   options?: string |
+                                             {
+                                                flags?: string;
+                                                defaultEncoding?: string;
+                                                fd?: number;
+                                                mode?: number;
+                                                autoClose?: boolean;
+                                                start?: number;
+                                            }): fs.WriteStream {
+    if (path instanceof VfsAbstractNode) {
+        return path.createWriteStream(options);
+    }
+    return fs.createWriteStream(path, options);
 }
 
 
