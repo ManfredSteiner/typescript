@@ -36,14 +36,14 @@ export function readFile (path: PathLike | number | VfsAbstractNode,
     if (path instanceof VfsAbstractNode) {
         return path.readFile(options);
     }
-    return fs.readFile.__promisify__(path, options);
+    return util.promisify(fs.readFile)(path, options);
 }
 
 export function stats (path: PathLike | VfsAbstractNode): Promise<fs.Stats> {
     if (path instanceof VfsAbstractNode) {
         return Promise.resolve(path.stat);
     }
-    return fs.stat.__promisify__(path);
+    return util.promisify(fs.stat)(path);
 }
 
 export function writeFile (path: PathLike | number | VfsAbstractNode, data: any,
@@ -52,7 +52,7 @@ export function writeFile (path: PathLike | number | VfsAbstractNode, data: any,
     if (path instanceof VfsAbstractNode) {
         return path.writeFile(data, options);
     }
-    return fs.writeFile.__promisify__(path, data, options);
+    return util.promisify(fs.writeFile)(path, options);
 }
 
 export function createReadStream (path: PathLike | VfsAbstractNode,
@@ -65,7 +65,7 @@ export function createReadStream (path: PathLike | VfsAbstractNode,
                                                 autoClose?: boolean;
                                                 start?: number;
                                                 end?: number;
-                                            }): fs.ReadStream {
+                                            }): stream.Readable {
     if (path instanceof VfsAbstractNode) {
         return path.createReadStream(options);
     }
@@ -81,7 +81,7 @@ export function createWriteStream (path: PathLike | VfsAbstractNode,
                                                 mode?: number;
                                                 autoClose?: boolean;
                                                 start?: number;
-                                            }): fs.WriteStream {
+                                            }): stream.Writable {
     if (path instanceof VfsAbstractNode) {
         return path.createWriteStream(options);
     }
@@ -227,13 +227,17 @@ export abstract class VfsAbstractNode {
     }
 
     public createReadStream (options?: string | { flags?: string; encoding?: string; fd?: number; mode?: number;
-                                                  autoClose?: boolean; start?: number; end?: number; }): fs.ReadStream {
-        throw new Error('createReadStream() not supported');
+                                                  autoClose?: boolean; start?: number; end?: number; }): stream.Readable {
+        return new stream.Readable({ read: function (size) {
+           this.emit('error', new Error('createReadStream not implemented'));
+        }});
     }
 
     public createWriteStream (options?: string | { flags?: string; defaultEncoding?: string; fd?: number; mode?: number;
-                                                   autoClose?: boolean; start?: number; }): fs.WriteStream {
-        throw new Error('createWriteStream() not supported');
+                                                   autoClose?: boolean; start?: number; }): stream.Writable {
+        return new stream.Writable({ write: function (chunk, encoding, callback) {
+            this.emit('error', new Error('createWriteStream not implemented'));
+        }});
     }
 }
 
@@ -398,6 +402,13 @@ export class VfsStaticTextFile extends VfsAbstractNode {
     public readFile (options?: { encoding?: string | null; flag?: string; } | string | undefined | null): Promise<string | Buffer> {
         return Promise.resolve(this._content);
     }
+
+    public createReadStream (options?: string | { flags?: string; encoding?: string; fd?: number; mode?: number;
+                                                  autoClose?: boolean; start?: number; end?: number; }): stream.Readable {
+        const rs = new stream.Readable({ read: function (size) { this.destroy() } });
+        rs.push(this._content);
+        return rs;
+    }
 }
 
 
@@ -503,6 +514,27 @@ class VfsOsFsFile extends VfsAbstractNode implements VfsOsFsNode {
         const fileName = this._base + '/' + this.name;
         return util.promisify(fs.readFile)(fileName, options);
     }
+
+    public writeFile (data: any, options: { encoding?: string | null; mode?: number | string; flag?: string; }
+                                          | string | undefined | null): Promise<void> {
+        const fileName = this._base + '/' + this.name;
+        return util.promisify(fs.writeFile)(fileName, options);
+    }
+
+
+    public createReadStream (options?: string | { flags?: string; encoding?: string; fd?: number; mode?: number;
+                                                  autoClose?: boolean; start?: number; end?: number; }): fs.ReadStream {
+        const fileName = this._base + '/' + this.name;
+        return fs.createReadStream(fileName, options);
+    }
+
+
+    public createWriteStream (options?: string | { flags?: string; defaultEncoding?: string; fd?: number; mode?: number;
+                                                   autoClose?: boolean; start?: number; }): fs.WriteStream {
+        const fileName = this._base + '/' + this.name;
+        return fs.createWriteStream(fileName, options);
+    }
+
 }
 
 

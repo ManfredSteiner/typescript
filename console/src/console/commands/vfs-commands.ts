@@ -232,12 +232,21 @@ class VfsCmdCat extends VfsShellCommand {
                 return Promise.reject(2);
             } else if (Array.isArray(resources) && resources.length === 1 && resources[0].stat.isFile()) {
                 return new Promise<number>( (resolve, reject) => {
-                    vfs.readFile(resources[i]).then( (result) => {
-                        this.env.stdout.write(result);
-                        this.env.stdout.write('\n');
-                        this.end();
-                        resolve(0);
-                    });
+                    const rs = vfs.createReadStream(resources[i]);
+                    rs.pipe(this.env.stdout);
+                    const end = (err?: any) => {
+                        if (err) {
+                            this.env.stderr.write('Error (cat): ' + err + '\n');
+                            this.end();
+                            reject(err);
+                        } else {
+                            this.env.stdout.write('\n');
+                            this.end();
+                            resolve();
+                        }
+                    }
+                    rs.on('end', end);
+                    rs.on('error', end);
                 });
             } else {
                 this.end('Error (cat): \'' + args[i] + '\' multiple files, select one')

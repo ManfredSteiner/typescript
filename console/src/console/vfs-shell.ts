@@ -19,6 +19,7 @@ export class VfsShell {
     private _commands: { [ key: string ]: VfsShellCommand } = {};
     private _cmdPending: boolean;
     private _lastExitCode: number;
+    private _lastError: any;
     private _waitingCommands: string [] = [];
     private _env: IVfsEnvironment;
     private _shellCmds: IVfsShellCmds;
@@ -150,11 +151,13 @@ export class VfsShell {
         Promise.all(cmdPromisses).then( () => {
             this._cmdPending = false;
             this._lastExitCode = 0;
+            this._lastError = undefined;
             // this.console.prompt();
             this.handleInput();
         }).catch( err => {
             this._cmdPending = false;
             this._lastExitCode = err;
+            this._lastError = err;
             // this.console.prompt();
             this.handleInput();
         })
