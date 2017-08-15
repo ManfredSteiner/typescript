@@ -1,10 +1,8 @@
 
 import * as vfs from './vfs';
-import { VfsFilesystem, VfsAbstractNode, VfsDirectoryNode, VfsStaticTextFile } from './vfs-filesystem';
 import { IVfsEnvironment, IVfsShellCmds, PipeReadable, PipeWritable, VfsShellCommand,
          IParsedCommands, IParsedCommand, IVfsCommandOption, IVfsCommandOptions } from './vfs-shell-command';
 import { addDefaultCommands } from './commands/vfs-commands';
-import { VfsOsFsDirectory } from './vfs-filesystem';
 
 import { Readable, Writable } from 'stream';
 import { CompleterResult } from 'readline';
@@ -12,8 +10,9 @@ import { CompleterResult } from 'readline';
 import * as debugsx from 'debug-sx';
 const debug: debugsx.ISimpleLogger = debugsx.createSimpleLogger('console:VfsShell');
 
+
 export class VfsShell {
-    private _pwd: VfsDirectoryNode;
+    private _pwd: vfs.VfsDirectoryNode;
     private _console: IVfsConsole;
     private _name: string;
     private _user: vfs.VfsUser;
@@ -26,15 +25,15 @@ export class VfsShell {
     private _aliases: { [ key: string ]: string []};
 
     public constructor (console: IVfsConsole, name: string, user: vfs.VfsUser, osFsBase?: string) {
-        this._pwd = VfsFilesystem.Instance.getDirectory(user.home, user, VfsFilesystem.Instance.root) || VfsFilesystem.Instance.root;
+        this._pwd = vfs.getDirectory(user.home, user, vfs.getRoot() ) || vfs.getRoot();
         this._console = console;
         this._name = name;
         this._user = user;
         this._env = { stdout: process.stdout, stdin: process.stdin, stderr: process.stderr };
         this._lastExitCode = 0;
 
-        VfsFilesystem.Instance.root.addChild(new VfsOsFsDirectory('osfs', VfsFilesystem.Instance.root, osFsBase || '/tmp'));
-        VfsFilesystem.Instance.root.addChild(new VfsDirectorySys('sys', VfsFilesystem.Instance.root));
+        vfs.getRoot().addChild(new vfs.VfsOsFsDirectory('osfs', vfs.getRoot(), osFsBase || '/tmp'));
+        vfs.getRoot().root.addChild(new VfsDirectorySys('sys', vfs.getRoot()));
 
         this._shellCmds = {
             alias: this.cmdAlias.bind(this),
@@ -59,7 +58,7 @@ export class VfsShell {
         return this._console;
     }
 
-    public get pwd (): VfsDirectoryNode {
+    public get pwd (): vfs.VfsDirectoryNode {
         return this._pwd;
     }
 
@@ -444,10 +443,10 @@ export class VfsShell {
 
     private cmdCd (path: string): string {
         if (!path) {
-            this._pwd = VfsFilesystem.Instance.getHomeDirectory(this._user);
+            this._pwd = vfs.getHomeDirectory(this._user);
             return undefined;
         }
-        const p = VfsFilesystem.Instance.getDirectory(path, this._user, this._pwd);
+        const p = vfs.getDirectory(path, this._user, this._pwd);
         if (!p) {
             return '\'' + path + '\' not found!';
         }
@@ -456,12 +455,12 @@ export class VfsShell {
         return undefined;
     }
 
-    private cmdFiles (path: string): VfsAbstractNode [] {
-        const p = VfsFilesystem.Instance.getChilds(path, this._user, this._pwd);
+    private cmdFiles (path: string): vfs.VfsAbstractNode [] {
+        const p = vfs.getChilds(path, this._user, this._pwd);
         return p;
     }
 
-    private cmdPwd (): VfsDirectoryNode {
+    private cmdPwd (): vfs.VfsDirectoryNode {
         return this._pwd;
     }
 
@@ -505,17 +504,17 @@ export class VfsShell {
     }
 }
 
-
-class VfsDirectorySys extends VfsDirectoryNode {
-    constructor (name: string, parent: VfsDirectoryNode) {
+class VfsDirectorySys extends vfs.VfsDirectoryNode {
+    constructor (name: string, parent: vfs.VfsDirectoryNode) {
         super(name, parent);
-        this.addChild(new VfsStaticTextFile('version', this, '1.0'));
+        this.addChild(new vfs.VfsStaticTextFile('version', this, '1.0'));
     }
 
-    public refresh(): Promise<VfsAbstractNode> {
+    public refresh(): Promise<vfs.VfsAbstractNode> {
         return Promise.resolve(this);
     }
 }
+
 
 export interface IVfsConsole {
   version: string;

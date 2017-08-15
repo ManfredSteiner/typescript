@@ -9,7 +9,7 @@ export class VfsCmdTest extends VfsShellCommand {
     private _options: IVfsCommandOptions;
 
     constructor (shell?: IVfsShellCmds) {
-        super('test');
+        super('test', shell);
     }
 
     public optionConfig (): IVfsCommandOptionConfig {

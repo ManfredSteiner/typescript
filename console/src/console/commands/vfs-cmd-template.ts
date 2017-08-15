@@ -3,7 +3,7 @@ import { IVfsShellCmds, VfsShellCommand, IVfsCommandOptionConfig, IVfsCommandOpt
 
 export class VfsCmdTemplate extends VfsShellCommand {
     constructor (shellCmds?: IVfsShellCmds) {
-        super('template');
+        super('template', shellCmds);
     }
 
     public optionConfig (): IVfsCommandOptionConfig {

@@ -1,7 +1,7 @@
-import { VfsAbstractNode, VfsDirectoryNode } from './vfs-filesystem';
-
 import { sprintf } from 'sprintf-js';
 import * as util from 'util';
+
+import * as vfs from './vfs';
 
 import { Readable, Writable } from 'stream';
 import { CompleterResult } from 'readline';
@@ -12,9 +12,11 @@ export abstract class VfsShellCommand {
     private _name: string;
     private _interrupted = false;
     private _env: IVfsEnvironment;
+    private _shellCmds: IVfsShellCmds;
 
-    constructor (name: string) {
+    constructor (name: string, shellCmds: IVfsShellCmds) {
       this._name = name;
+      this._shellCmds = shellCmds;
     }
 
     public get name () {
@@ -23,6 +25,10 @@ export abstract class VfsShellCommand {
 
     protected get env (): IVfsEnvironment {
         return this._env;
+    }
+
+    protected get shellCmds (): IVfsShellCmds {
+        return this._shellCmds;
     }
 
     public abstract execute (args: string [], options: IVfsCommandOptions): Promise<number>;
@@ -135,6 +141,35 @@ export abstract class VfsShellCommand {
         return rv;
     }
 
+    protected completeAsFile (linePartial: string, parsedCommand: IParsedCommand): CompleterResult {
+        if (parsedCommand && parsedCommand.args) {
+            let filter = '*';
+            let fileNamePartial = '';
+            if (parsedCommand.args.length > 0) {
+                fileNamePartial = parsedCommand.args[parsedCommand.args.length - 1 ]
+                filter = fileNamePartial + '*';
+                const i = fileNamePartial.lastIndexOf('/');
+                if (i >= 0) {
+                    if (fileNamePartial.length !== (i + 1)) {
+                        fileNamePartial = fileNamePartial.substr(i + 1);
+                    } else {
+                        fileNamePartial = '';
+                    }
+                }
+            }
+            const files = this._shellCmds.files(filter) || [];
+            const hits: string [] = [];
+            for (const f of files) {
+                if (f instanceof vfs.VfsDirectoryNode) {
+                    hits.push(f.name + '/');
+                } else {
+                    hits.push(f.name);
+                }
+            }
+            return [ hits, fileNamePartial ];
+        }
+        return undefined;
+    }
 
     private destroy (error?: any) {
         if (this.env.stdout instanceof PipeWritable) {
@@ -210,8 +245,8 @@ export class PipeWritable extends Writable {
 export interface IVfsShellCmds {
     alias: (alias: string, args: string []) => string,
     cd: (path: string) => string,
-    files: (path: string) => VfsAbstractNode [],
-    pwd: () => VfsDirectoryNode,
+    files: (path: string) => vfs.VfsAbstractNode [],
+    pwd: () => vfs.VfsDirectoryNode,
     version: () => string
 
 }

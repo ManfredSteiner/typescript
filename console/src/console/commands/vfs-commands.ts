@@ -1,7 +1,7 @@
 
 import * as vfs from '../vfs';
 import { VfsShellCommand, IVfsShellCmds, IVfsCommandOptionConfig, IParsedCommand, IVfsCommandOptions } from '../vfs-shell-command';
-import { VfsAbstractNode, VfsDirectoryNode } from '../vfs-filesystem';
+// import { VfsAbstractNode, VfsDirectoryNode, VfsOsFsNode } from '../vfs-filesystem';
 import { VfsCmdTest } from './vfs-cmd-test';
 
 import { CompleterResult } from 'readline';
@@ -14,12 +14,12 @@ export function addDefaultCommands (shell: IVfsShellCmds,
     const cmdAlias = new VfsCmdAlias(shell); if (!collection[cmdAlias.name]) { collection[cmdAlias.name] = cmdAlias; }
     const cmdCat = new VfsCmdCat(shell); if (!collection[cmdCat.name]) { collection[cmdCat.name] = cmdCat; }
     const cmdCd = new VfsCmdCd(shell); if (!collection[cmdCd.name]) { collection[cmdCd.name] = cmdCd; }
-    const cmdEcho = new VfsCmdEcho(); if (!collection[cmdEcho.name]) { collection[cmdEcho.name] = cmdEcho; }
-    const cmdGrep = new VfsCmdGrep(); if (!collection[cmdGrep.name]) { collection[cmdGrep.name] = cmdGrep; }
-    const cmdHelp = new VfsCmdHelp(help); if (!collection[cmdHelp.name]) { collection[cmdHelp.name] = cmdHelp; }
+    const cmdEcho = new VfsCmdEcho(shell); if (!collection[cmdEcho.name]) { collection[cmdEcho.name] = cmdEcho; }
+    const cmdGrep = new VfsCmdGrep(shell); if (!collection[cmdGrep.name]) { collection[cmdGrep.name] = cmdGrep; }
+    const cmdHelp = new VfsCmdHelp(shell, help); if (!collection[cmdHelp.name]) { collection[cmdHelp.name] = cmdHelp; }
     const cmdPwd = new VfsCmdPwd(shell); if (!collection[cmdPwd.name]) { collection[cmdPwd.name] = cmdPwd; }
     const cmdLs = new VfsCmdLs(shell); if (!collection[cmdLs.name]) { collection[cmdLs.name] = cmdLs; }
-    const cmdWait = new VfsCmdWait(); if (!collection[cmdWait.name]) { collection[cmdWait.name] = cmdWait; }
+    const cmdWait = new VfsCmdWait(shell); if (!collection[cmdWait.name]) { collection[cmdWait.name] = cmdWait; }
 
     const cmdTest = new VfsCmdTest(shell); if (!collection[cmdTest.name]) { collection[cmdTest.name] = cmdTest; }
 }
@@ -29,7 +29,7 @@ class VfsCmdAlias extends VfsShellCommand {
     private _alias: (alias: string, args: string []) => string;
 
     constructor (shellCmds: IVfsShellCmds) {
-        super('alias');
+        super('alias', shellCmds);
         this._alias = shellCmds.alias;
     }
 
@@ -52,8 +52,8 @@ class VfsCmdAlias extends VfsShellCommand {
 }
 
 class VfsCmdEcho extends VfsShellCommand {
-    constructor () {
-        super('echo');
+    constructor (shellCmds: IVfsShellCmds) {
+        super('echo', shellCmds);
     }
 
     public optionConfig (): IVfsCommandOptionConfig {
@@ -94,8 +94,8 @@ class VfsCmdHelp extends VfsShellCommand {
 
     private _help: (args: string [], options: IVfsCommandOptions) => number;
 
-    constructor (help: (args: string [], options: IVfsCommandOptions) => number) {
-        super('help');
+    constructor (shellCmds: IVfsShellCmds, help: (args: string [], options: IVfsCommandOptions) => number) {
+        super('help', shellCmds);
         this._help = help;
     }
 
@@ -120,8 +120,8 @@ class VfsCmdHelp extends VfsShellCommand {
 class VfsCmdGrep extends VfsShellCommand {
     private _regExp: RegExp;
 
-    constructor () {
-        super('grep');
+    constructor (shellCmds: IVfsShellCmds) {
+        super('grep', shellCmds);
     }
 
     public execute (args: string [], options: IVfsCommandOptions): Promise<number> {
@@ -181,10 +181,10 @@ class VfsCmdGrep extends VfsShellCommand {
 }
 
 class VfsCmdPwd extends VfsShellCommand {
-    private _pwd: () => VfsDirectoryNode;
+    private _pwd: () => vfs.VfsDirectoryNode;
 
     constructor (shellCmds: IVfsShellCmds) {
-        super('pwd');
+        super('pwd', shellCmds);
         this._pwd = shellCmds.pwd;
     }
 
@@ -210,10 +210,10 @@ class VfsCmdPwd extends VfsShellCommand {
 }
 
 class VfsCmdCat extends VfsShellCommand {
-    private _files: (path: string) => VfsAbstractNode [];
+    private _files: (path: string) => vfs.VfsAbstractNode [];
 
     constructor (shellCmds: IVfsShellCmds) {
-        super('cat');
+        super('cat', shellCmds);
         this._files = shellCmds.files;
     }
 
@@ -227,10 +227,10 @@ class VfsCmdCat extends VfsShellCommand {
             if (Array.isArray(resources) && resources.length === 0) {
                 this.end('Error (cat): \'' + args[i] + '\' not found')
                 return Promise.reject(2);
-            } else if (Array.isArray(resources) && resources.length === 1 && !resources[0].stats.isFile()) {
+            } else if (Array.isArray(resources) && resources.length === 1 && !resources[0].stat.isFile()) {
                 this.end('Error (cat): \'' + args[i] + '\' is not a file')
                 return Promise.reject(2);
-            } else if (Array.isArray(resources) && resources.length === 1 && resources[0].stats.isFile()) {
+            } else if (Array.isArray(resources) && resources.length === 1 && resources[0].stat.isFile()) {
                 return new Promise<number>( (resolve, reject) => {
                     vfs.readFile(resources[i]).then( (result) => {
                         this.env.stdout.write(result);
@@ -253,13 +253,17 @@ class VfsCmdCat extends VfsShellCommand {
     public getSyntax (): string {
         return ' file1 [...]';
     }
+
+    public completer (linePartial: string, parsedCommand: IParsedCommand): CompleterResult {
+        return this.completeAsFile(linePartial, parsedCommand);
+    }
 }
 
 class VfsCmdCd extends VfsShellCommand {
     private _cd: (path: string) => string;
 
     constructor (shellCmds: IVfsShellCmds) {
-        super('cd');
+        super('cd', shellCmds);
         this._cd = shellCmds.cd;
     }
 
@@ -285,14 +289,18 @@ class VfsCmdCd extends VfsShellCommand {
         return '[~ | .. | . | path | ~/subpath]';
     }
 
+    public completer (linePartial: string, parsedCommand: IParsedCommand): CompleterResult {
+        return this.completeAsFile(linePartial, parsedCommand);
+    }
+
 }
 
 class VfsCmdLs extends VfsShellCommand {
-    private _files: (path: string) => VfsAbstractNode [];
-    private _pwd: () => VfsDirectoryNode;
+    private _files: (path: string) => vfs.VfsAbstractNode [];
+    private _pwd: () => vfs.VfsDirectoryNode;
 
     constructor (shellCmds: IVfsShellCmds) {
-        super('ls');
+        super('ls', shellCmds);
         this._files = shellCmds.files;
         this._pwd = shellCmds.pwd;
     }
@@ -300,7 +308,8 @@ class VfsCmdLs extends VfsShellCommand {
     public optionConfig (): IVfsCommandOptionConfig {
         return {
             directory: { short: 'd', argCnt: 0 },
-            listing:   { short: 'l', argCnt: 0 }
+            listing:   { short: 'l' },
+            osfspath:  { short: 'e' }
         };
     }
 
@@ -316,39 +325,21 @@ class VfsCmdLs extends VfsShellCommand {
                 rv = 2;
             } else {
                 for (const r of resources) {
-                    const stats = r.stats;
+                    const stats = r.stat;
                     if (stats && stats.isDirectory()) {
                         if (options.directory) {
-                            if (asLine) {
-                                this.println(stats.typeChar + '   ' + r.name);
-                            } else {
-                                this.print(r.name + ' ');
-                            }
+                            this.printLine(r, options, stats);
                         } else {
                             if (args.length > 1) {
                                 this.println('\n' + path + ':');
                             }
                             const childs = this._files(path + '/*') || [];
                             for (const c of childs) {
-                                if (asLine) {
-                                    this.println(c.stats.typeChar + '   ' + c.name);
-                                } else {
-                                    this.print(c.name + ' ');
-                                }
+                                this.printLine(c, options);
                             }
                         }
-                    } else if (stats && stats.isFile()) {
-                        if (asLine) {
-                            this.println(stats.typeChar + '   ' + r.name);
-                        } else {
-                            this.print(r.name + ' ');
-                        }
                     } else {
-                        if (asLine) {
-                            this.println('?   ' + r.name);
-                        } else {
-                            this.print(r.name + ' ');
-                        }
+                        this.printLine(r, options, stats);
                     }
                 }
             }
@@ -357,6 +348,20 @@ class VfsCmdLs extends VfsShellCommand {
         this.env.stdout.write('\n');
         this.end();
         return Promise.resolve(rv);
+    }
+
+    public printLine (item: vfs.VfsAbstractNode, options: IVfsCommandOptions, stats?: vfs.Stats) {
+        stats = stats || item.stat;
+        let name = item.name;
+        while (name.length < 20) { name += ' '; }
+        name += '   ';
+        let ext = '';
+        if (stats.isFsStat() && options.osfspath && (<vfs.VfsOsFsNode><any>item).osfsPath) {
+            ext += (<vfs.VfsOsFsNode><any>item).osfsPath;
+        }
+        this.println(stats.typeChar + '   ' + name + ext);
+
+
     }
 
     public getHelp (): string {
@@ -368,41 +373,15 @@ class VfsCmdLs extends VfsShellCommand {
     }
 
     public completer (linePartial: string, parsedCommand: IParsedCommand): CompleterResult {
-        if (parsedCommand && parsedCommand.args) {
-            let filter = '*';
-            let fileNamePartial = '';
-            if (parsedCommand.args.length > 0) {
-                fileNamePartial = parsedCommand.args[parsedCommand.args.length - 1 ]
-                filter = fileNamePartial + '*';
-                const i = fileNamePartial.lastIndexOf('/');
-                if (i >= 0) {
-                    if (fileNamePartial.length !== (i + 1)) {
-                        fileNamePartial = fileNamePartial.substr(i + 1);
-                    } else {
-                        fileNamePartial = '';
-                    }
-                }
-            }
-            const files = this._files(filter);
-            const hits: string [] = [];
-            for (const f of files) {
-                if (f instanceof VfsDirectoryNode) {
-                    hits.push(f.name + '/');
-                } else {
-                    hits.push(f.name);
-                }
-            }
-            return [ hits, fileNamePartial ];
-        }
-        return undefined;
+        return this.completeAsFile(linePartial, parsedCommand);
     }
 
 }
 
 
 class VfsCmdWait extends VfsShellCommand {
-    constructor () {
-        super('wait');
+    constructor (shellCmds: IVfsShellCmds) {
+        super('wait', shellCmds);
     }
 
     public execute (args: string [], options: IVfsCommandOptions): Promise<number> {

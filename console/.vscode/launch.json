@@ -6,6 +6,7 @@
   "configurations": [
     {
       "type": "node",
+      "protocol": "auto",
       "request": "launch",
       "name": "Launch Program",
       "program": "${workspaceRoot}/src/main.ts",
