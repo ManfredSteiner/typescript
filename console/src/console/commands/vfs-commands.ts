@@ -1,7 +1,6 @@
 
 import * as vfs from '../vfs';
 import { VfsShellCommand, IVfsShellCmds, IVfsCommandOptionConfig, IParsedCommand, IVfsCommandOptions } from '../vfs-shell-command';
-// import { VfsAbstractNode, VfsDirectoryNode, VfsOsFsNode } from '../vfs-filesystem';
 import { VfsCmdTest } from './vfs-cmd-test';
 
 import { CompleterResult } from 'readline';
@@ -232,21 +231,21 @@ class VfsCmdCat extends VfsShellCommand {
                 return Promise.reject(2);
             } else if (Array.isArray(resources) && resources.length === 1 && resources[0].stat.isFile()) {
                 return new Promise<number>( (resolve, reject) => {
-                    const rs = vfs.createReadStream(resources[i]);
-                    rs.pipe(this.env.stdout);
                     const end = (err?: any) => {
                         if (err) {
                             this.env.stderr.write('Error (cat): ' + err + '\n');
                             this.end();
                             reject(err);
                         } else {
-                            this.env.stdout.write('\n');
+                            // this.env.stdout.write('\n');
                             this.end();
                             resolve();
                         }
                     }
+                    const rs = vfs.createReadStream(resources[i]);
                     rs.on('end', end);
                     rs.on('error', end);
+                    rs.pipe(this.env.stdout).on('error', end);
                 });
             } else {
                 this.end('Error (cat): \'' + args[i] + '\' multiple files, select one')

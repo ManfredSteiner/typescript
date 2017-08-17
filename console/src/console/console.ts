@@ -62,7 +62,7 @@ export class Console {
     }
 
 
-    public exit (): void {
+    public exit (done: () => void): void {
         this._out.write('really exit (yes/no): ');
         this._waitForResponse = (response) => {
             if (response === 'yes') {
@@ -70,7 +70,8 @@ export class Console {
                 this._exitCallback(0);
             } else if (response === 'no') {
                 this._waitForResponse = undefined;
-                this._shell.handleInput();
+                // this._shell.handleInput();
+                done();
             } else {
                 this._out.write('invalid answer, use yes or no: ');
             }

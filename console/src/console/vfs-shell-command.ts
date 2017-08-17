@@ -142,33 +142,7 @@ export abstract class VfsShellCommand {
     }
 
     protected completeAsFile (linePartial: string, parsedCommand: IParsedCommand): CompleterResult {
-        if (parsedCommand && parsedCommand.args) {
-            let filter = '*';
-            let fileNamePartial = '';
-            if (parsedCommand.args.length > 0) {
-                fileNamePartial = parsedCommand.args[parsedCommand.args.length - 1 ]
-                filter = fileNamePartial + '*';
-                const i = fileNamePartial.lastIndexOf('/');
-                if (i >= 0) {
-                    if (fileNamePartial.length !== (i + 1)) {
-                        fileNamePartial = fileNamePartial.substr(i + 1);
-                    } else {
-                        fileNamePartial = '';
-                    }
-                }
-            }
-            const files = this._shellCmds.files(filter) || [];
-            const hits: string [] = [];
-            for (const f of files) {
-                if (f instanceof vfs.VfsDirectoryNode) {
-                    hits.push(f.name + '/');
-                } else {
-                    hits.push(f.name);
-                }
-            }
-            return [ hits, fileNamePartial ];
-        }
-        return undefined;
+        return this._shellCmds.completeAsFile(linePartial, parsedCommand.args);
     }
 
     private destroy (error?: any) {
@@ -245,6 +219,7 @@ export class PipeWritable extends Writable {
 export interface IVfsShellCmds {
     alias: (alias: string, args: string []) => string,
     cd: (path: string) => string,
+    completeAsFile: (linePartial: string, args: string []) => CompleterResult;
     files: (path: string) => vfs.VfsAbstractNode [],
     pwd: () => vfs.VfsDirectoryNode,
     version: () => string
