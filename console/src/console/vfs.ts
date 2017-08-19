@@ -164,23 +164,23 @@ export class VfsGroup {
 
 export abstract class VfsAbstractNode {
 
-    public static toDateString (time: number): string {
-        if (time === undefined || time <= 0) {
-            return '';
-        }
-        const d = new Date(time);
-        return VfsAbstractNode.dateFormatter.format(time);
-    }
+    // public static toDateString (time: number): string {
+    //     if (time === undefined || time <= 0) {
+    //         return '';
+    //     }
+    //     const d = new Date(time);
+    //     return VfsAbstractNode.dateFormatter.format(time);
+    // }
 
-    protected static dateFormatter = new Intl.DateTimeFormat('de-AT', {
-        weekday: 'short',
-        year: 'numeric',
-        month: 'numeric',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: 'numeric',
-        second: 'numeric'
-    });
+    // protected static dateFormatter = new Intl.DateTimeFormat('de-AT', {
+    //     weekday: 'short',
+    //     year: 'numeric',
+    //     month: 'numeric',
+    //     day: 'numeric',
+    //     hour: 'numeric',
+    //     minute: 'numeric',
+    //     second: 'numeric'
+    // });
 
     // *****************************************************************
 
@@ -767,86 +767,105 @@ class VfsFilesystem {
 
 export class FormatterStream extends stream.Writable {
 
-      private _out: NodeJS.WritableStream;
-      private _isNetbeans: boolean;
-      private _enabled: boolean;
+    private static dateFormatter = new Intl.DateTimeFormat('de-AT', {
+        weekday: 'short',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric'
+    });
 
-      constructor (out?: NodeJS.WritableStream) {
+    private _out: NodeJS.WritableStream;
+    private _isNetbeans: boolean;
+    private _enabled: boolean;
+
+    constructor (out?: NodeJS.WritableStream) {
         super({decodeStrings: false});
         this._out = out || process.stdout;
         this._isNetbeans = process.env.NB_EXEC_EXTEXECUTION_PROCESS_UUID !== undefined;
         this._enabled = true;
-      }
+    }
 
-      public _write(chunk: any, enc: string, next: Function): void {
+    public _write(chunk: any, enc: string, next: Function): void {
         if (this._enabled) {
-          this._out.write(chunk);
+            this._out.write(chunk);
         }
         next();
-      }
+    }
 
-      public set enabled (value: boolean) {
+    public set enabled (value: boolean) {
         this._enabled = value;
-      }
+    }
 
-      public get enabled (): boolean {
+    public get enabled (): boolean {
         return this._enabled;
-      }
+    }
 
-      public set out (out: NodeJS.WritableStream) {
+    public set out (out: NodeJS.WritableStream) {
         this._out = out;
-      }
+    }
 
-      public get out (): NodeJS.WritableStream {
+    public get out (): NodeJS.WritableStream {
         return this._out;
-      }
+    }
 
-      public print (str: any): void {
+    public print (str: any): void {
         if (!str) {
-          return;
+            return;
         }
         if (str instanceof Error) {
-          str = util.format(str);
+            str = util.format(str);
         } else if (typeof str  === 'object') {
-          str = JSON.stringify(str);
+            str = JSON.stringify(str);
         }
         this.write(str);
         if (this._isNetbeans && !str.endsWith('\\n')) {
-          this.write('\n');
+            this.write('\n');
         }
-      }
+    }
 
-      public println (str?: any): void {
+    public println (str?: any): void {
         if (str) {
-          this.print(str);
+            this.print(str);
         }
         this.write('\n');
-      }
+    }
 
-      public format (...p: any []): void {
+    public format (...p: any []): void {
         if (!p || p.length === 0) {
-          return;
+            return;
         }
         // const s = util.format.apply(util, p);
         const s = sprintf.apply(sprintf, p);
         this.write(s);
         if (this._isNetbeans && !p[0].endsWith('\\n')) {
-          this.write('\n');
+            this.write('\n');
         }
-      }
+    }
 
-      public formatln (...p: any []): void {
+    public formatln (...p: any []): void {
         if (!p || p.length === 0) {
-          return;
+            return;
         }
         // const s = util.format.apply(util, p);
         const s = sprintf.apply(sprintf, p);
         this.write(s);
         if (this._isNetbeans && !p[0].endsWith('\\n')) {
-          this.write('\n');
+            this.write('\n');
         }
         this.write('\n');
-      }
+    }
+
+    public toDateString (time: number): string {
+        if (time === undefined || time <= 0) {
+            return '';
+        }
+        const d = new Date(time);
+        return FormatterStream.dateFormatter.format(time);
+    }
+
 }
 
 const vfsfs: VfsFilesystem = new VfsFilesystem ();
