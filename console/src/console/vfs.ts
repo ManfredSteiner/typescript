@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as stream from 'stream';
 import * as events from 'events';
 import * as util from 'util';
+import { sprintf } from 'sprintf-js';
 
 export type PathLike = fs.PathLike;
 
@@ -254,6 +255,7 @@ export abstract class VfsDirectoryNode extends VfsAbstractNode {
         this._childs = [];
     }
 
+
     public readFile (options?: { encoding?: string | null; flag?: string; } | string | undefined | null): Promise<string | Buffer> {
         const err: NodeJS.ErrnoException = new Error('readFile fails on directory');
         return Promise.reject(err);
@@ -373,6 +375,7 @@ export abstract class VfsDirectoryNode extends VfsAbstractNode {
         this._childs = [];
         return rv;
     }
+
 }
 
 
@@ -409,6 +412,49 @@ export class VfsStaticTextFile extends VfsAbstractNode {
         rs.push(this._content);
         return rs;
     }
+}
+
+
+export abstract class VfsDynamicTextDataFile extends VfsAbstractNode {
+
+    constructor (name: string, parent: VfsDirectoryNode) {
+        super(name, parent, new VfsFileStats(-1));
+    }
+
+    public refresh (): Promise<VfsAbstractNode> {
+        return Promise.resolve(this);
+    }
+
+    public readFile (options?: { encoding?: string | null; flag?: string; } | string | undefined | null): Promise<string | Buffer> {
+        let result = '';
+        const ws = new stream.Writable({ decodeStrings: false, write: function (chunk, encoding, done) {
+            if (typeof(chunk) === 'string') {
+                result += chunk;
+            } else if (chunk instanceof Buffer) {
+                result += chunk.toString();
+            }
+            done();
+        } });
+        return new Promise<string>( (resolve, reject) => {
+            ws.on('error', (err) => reject(err) );
+            ws.on('finish', () => resolve(result) );
+            this.createContent(new FormatterStream(ws));
+            ws.end();
+        });
+    }
+
+    public createReadStream (options?: string | { flags?: string; encoding?: string; fd?: number; mode?: number;
+                                                  autoClose?: boolean; start?: number; end?: number; }): stream.Readable {
+        const rs = new stream.Readable({ objectMode: true, read: function (size) { } });
+        const ws = new stream.Writable({ decodeStrings: false, write: function (chunk, encoding, done) {
+                                           rs.push(chunk); done();
+                                       } });
+        this.createContent(new FormatterStream(ws));
+        rs.destroy();
+        return rs;
+    }
+
+    protected abstract createContent (out: FormatterStream): void;
 }
 
 
@@ -717,6 +763,90 @@ class VfsFilesystem {
         return this.getDirectory(user.home, user, undefined) || this._root;
     }
 
+}
+
+export class FormatterStream extends stream.Writable {
+
+      private _out: NodeJS.WritableStream;
+      private _isNetbeans: boolean;
+      private _enabled: boolean;
+
+      constructor (out?: NodeJS.WritableStream) {
+        super({decodeStrings: false});
+        this._out = out || process.stdout;
+        this._isNetbeans = process.env.NB_EXEC_EXTEXECUTION_PROCESS_UUID !== undefined;
+        this._enabled = true;
+      }
+
+      public _write(chunk: any, enc: string, next: Function): void {
+        if (this._enabled) {
+          this._out.write(chunk);
+        }
+        next();
+      }
+
+      public set enabled (value: boolean) {
+        this._enabled = value;
+      }
+
+      public get enabled (): boolean {
+        return this._enabled;
+      }
+
+      public set out (out: NodeJS.WritableStream) {
+        this._out = out;
+      }
+
+      public get out (): NodeJS.WritableStream {
+        return this._out;
+      }
+
+      public print (str: any): void {
+        if (!str) {
+          return;
+        }
+        if (str instanceof Error) {
+          str = util.format(str);
+        } else if (typeof str  === 'object') {
+          str = JSON.stringify(str);
+        }
+        this.write(str);
+        if (this._isNetbeans && !str.endsWith('\\n')) {
+          this.write('\n');
+        }
+      }
+
+      public println (str?: any): void {
+        if (str) {
+          this.print(str);
+        }
+        this.write('\n');
+      }
+
+      public format (...p: any []): void {
+        if (!p || p.length === 0) {
+          return;
+        }
+        // const s = util.format.apply(util, p);
+        const s = sprintf.apply(sprintf, p);
+        this.write(s);
+        if (this._isNetbeans && !p[0].endsWith('\\n')) {
+          this.write('\n');
+        }
+      }
+
+      public formatln (...p: any []): void {
+        if (!p || p.length === 0) {
+          return;
+        }
+        // const s = util.format.apply(util, p);
+        const s = sprintf.apply(sprintf, p);
+        this.write(s);
+        if (this._isNetbeans && !p[0].endsWith('\\n')) {
+          this.write('\n');
+        }
+        this.write('\n');
+      }
 }
 
 const vfsfs: VfsFilesystem = new VfsFilesystem ();

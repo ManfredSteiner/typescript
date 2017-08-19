@@ -4,6 +4,7 @@ import { VfsShellCommand, IVfsShellCmds, IVfsCommandOptionConfig, IParsedCommand
 import { VfsCmdTest } from './vfs-cmd-test';
 
 import { CompleterResult } from 'readline';
+import * as stream from 'stream';
 
 import * as byline from 'byline';
 
@@ -246,6 +247,10 @@ class VfsCmdCat extends VfsShellCommand {
                     rs.on('end', end);
                     rs.on('error', end);
                     rs.pipe(this.env.stdout).on('error', end);
+                    // const ws = new stream.Writable({ decodeStrings: false, write: (chunk, encoding, done) => {
+                    //     this.env.stdout.write(chunk);
+                    // }});
+                    // rs.pipe(ws);
                 });
             } else {
                 this.end('Error (cat): \'' + args[i] + '\' multiple files, select one')

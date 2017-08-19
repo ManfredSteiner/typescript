@@ -4,6 +4,7 @@ import * as util from 'util';
 import * as vfs from './vfs';
 
 import { Readable, Writable } from 'stream';
+import * as stream from 'stream';
 import { CompleterResult } from 'readline';
 
 
@@ -146,23 +147,34 @@ export abstract class VfsShellCommand {
     }
 
     private destroy (error?: any) {
-        if (this.env.stdout instanceof PipeWritable) {
-            if (this.env.stdout !== <any>process.stdout && this.env.stdout !== <any>process.stderr) {
-                this.env.stdout.destroy(error);
+        if (this.env.stdout !== process.stdout && this.env.stdout !== process.stderr) {
+            // check constructor, because using instanceof will not work
+            // see https://stackoverflow.com/questions/45772705
+            if (PipeWritable.prototype.isPrototypeOf(this.env.stdout)) {
+                // (<PipeWritable>this.env.stdout).destroy(error);
+                this.env.stdout.end();
+            } else {
+                if (error) {
+                    (<stream.Writable>this.env.stdout).destroy(error);
+                } else {
+                    this.env.stdout.end();
+                }
             }
         }
-        if (this.env.stderr instanceof PipeWritable) {
-            if (this.env.stderr !== <any>process.stdout && this.env.stderr !== <any>process.stderr) {
-                this.env.stderr.destroy(error);
+
+        if (this.env.stderr !== process.stdout && this.env.stderr !== process.stderr) {
+            if (PipeWritable.prototype.isPrototypeOf(this.env.stderr)) {
+                // this.env.stderr.destroy(error);
+                this.env.stderr.end();
+            } else {
+                if (error) {
+                    (<stream.Writable>this.env.stderr).destroy(error);
+                } else {
+                    this.env.stderr.end();
+                }
             }
+
         }
-        // does not work, process.stderr is detected as instance of PipeWritable why ?
-        // if (this.env.stdout instanceof PipeWritable) {
-        //     this.env.stdout.destroy(error);
-        // }
-        // if (this.env.stderr instanceof PipeWritable) {
-        //     this.env.stderr.destroy(error);
-        // }
     }
 
 }
@@ -184,6 +196,11 @@ export class PipeReadable extends Readable {
   public _read (size: number) { }
 }
 
+/**
+ * Attention avoid: obj instanceof PipeWritable
+ *     use instead: PipeWritable.prototype.isPrototypeOf(obj)
+ *             see: https://stackoverflow.com/questions/45772705
+ */
 export class PipeWritable extends Writable {
     private _sink: Readable;
     private _destroyOnEnd: boolean;
@@ -197,6 +214,17 @@ export class PipeWritable extends Writable {
         this.on('close', () => { this.destroy(); });
         this.on('error', (err) => { this.destroy(err); });
     }
+
+    public end(): void;
+    // tslint:disable-next-line:unified-signatures
+    public end(chunk: any, cb?: Function): void;
+    // tslint:disable-next-line:unified-signatures
+    public end(chunk: any, encoding?: string | Function, cb?: Function): void;
+    public end(...args: any[]): void {
+        super.end(...args);
+        this.destroy();
+    }
+
 
     _write (chunk: any, encoding?: string, done?: Function): void {
         this._sink.push(chunk, encoding);
@@ -256,5 +284,3 @@ export interface IParsedCommands {
     valid: boolean,
     cmds: IParsedCommand []
 }
-
-

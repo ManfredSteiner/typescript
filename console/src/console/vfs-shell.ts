@@ -26,7 +26,7 @@ export class VfsShell {
     private _shellCmds: IVfsShellCmds;
     private _aliases: { [ key: string ]: string []};
 
-    public constructor (console: IVfsConsole, name: string, user: vfs.VfsUser, osFsBase?: string) {
+    public constructor (console: IVfsConsole, name: string, user: vfs.VfsUser, version?: string, osFsBase?: string) {
         this._pwd = vfs.getDirectory(user.home, user, vfs.getRoot() ) || vfs.getRoot();
         this._console = console;
         this._name = name;
@@ -35,7 +35,7 @@ export class VfsShell {
         this._lastExitCode = 0;
 
         vfs.getRoot().addChild(new vfs.VfsOsFsDirectory('osfs', vfs.getRoot(), osFsBase || '/tmp'));
-        vfs.getRoot().root.addChild(new VfsDirectorySys('sys', vfs.getRoot()));
+        vfs.getRoot().root.addChild(new VfsDirectorySys('sys', vfs.getRoot(), version));
 
         this._shellCmds = {
             alias: this.cmdAlias.bind(this),
@@ -156,13 +156,12 @@ export class VfsShell {
         }
 
         Promise.all(cmdPromisses).then( () => {
-            this._env.stdout.write('\n');
             this._cmdPending = false;
             this._lastExitCode = 0;
             this._lastError = undefined;
             this.handleInput();
         }).catch( err => {
-            this._env.stdout.write('\n');
+            // this._env.stdout.write('\n');
             this._cmdPending = false;
             this._lastExitCode = err;
             this._lastError = err;
@@ -648,9 +647,9 @@ export class VfsShell {
 }
 
 class VfsDirectorySys extends vfs.VfsDirectoryNode {
-    constructor (name: string, parent: vfs.VfsDirectoryNode) {
+    constructor (name: string, parent: vfs.VfsDirectoryNode, version: string) {
         super(name, parent);
-        this.addChild(new vfs.VfsStaticTextFile('version', this, '1.0\n'));
+        this.addChild(new vfs.VfsStaticTextFile('version', this, version + '\n'));
     }
 
     public refresh(): Promise<vfs.VfsAbstractNode> {

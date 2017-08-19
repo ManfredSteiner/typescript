@@ -32,7 +32,7 @@ export class Console {
             });
         this._readLine.setPrompt('> ');
         this._readLine.on('line', this.parseInput.bind(this));
-        this._shell = new VfsShell(this, name || '?', new vfs.VfsUser(0, 0, 'admin', '/', true), osFsBase);
+        this._shell = new VfsShell(this, name || '?', new vfs.VfsUser(0, 0, 'admin', '/', true), version, osFsBase);
         this.setExitCallback(process.exit);
     }
 
