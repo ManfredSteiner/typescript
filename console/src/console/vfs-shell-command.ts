@@ -269,6 +269,20 @@ export class PipeWritable extends Writable {
 
 }
 
+export interface GitInfo {
+    remotes: string [],
+    branch: string,
+    tag: string,
+    hash: string,
+    modified: string [],
+    submodules: { path: string, gitInfo: GitInfo } []
+}
+
+export interface AppVersion {
+    version: string,
+    startedAt: Date,
+    git: GitInfo
+}
 
 export interface IVfsShellCmds {
     alias: (alias: string, args: string []) => string,
@@ -276,8 +290,7 @@ export interface IVfsShellCmds {
     completeAsFile: (linePartial: string, args: string []) => Promise<CompleterResult>;
     files: (path: string) => Promise<vfs.VfsAbstractNode []>,
     pwd: () => vfs.VfsDirectoryNode,
-    version: () => string
-
+    version: () => AppVersion
 }
 
 export interface IVfsCommandOptionConfig {

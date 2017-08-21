@@ -1,7 +1,8 @@
 
 import * as vfs from './vfs';
 import { IVfsEnvironment, IVfsShellCmds, PipeReadable, PipeWritable, VfsShellCommand,
-         IParsedCommands, IParsedCommand, IVfsCommandOption, IVfsCommandOptions } from './vfs-shell-command';
+         IParsedCommands, IParsedCommand, IVfsCommandOption, IVfsCommandOptions,
+         AppVersion, GitInfo } from './vfs-shell-command';
 import { addDefaultCommands } from './commands/vfs-commands';
 
 import * as stream from 'stream';
@@ -26,7 +27,7 @@ export class VfsShell {
     private _shellCmds: IVfsShellCmds;
     private _aliases: { [ key: string ]: string []};
 
-    public constructor (console: IVfsConsole, name: string, user: vfs.VfsUser, version?: string, osFsBase?: string) {
+    public constructor (console: IVfsConsole, name: string, user: vfs.VfsUser, version?: AppVersion, osFsBase?: string) {
         this._pwd = vfs.getRoot();
         vfs.setUser(user);
         vfs.getDirectory(user.home, user, vfs.getRoot() ).then( result => {
@@ -652,23 +653,60 @@ export class VfsShell {
 }
 
 class VfsDirectorySys extends vfs.VfsDirectoryNode {
-    constructor (name: string, parent: vfs.VfsDirectoryNode, version: string) {
+    constructor (name: string, parent: vfs.VfsDirectoryNode, version: AppVersion) {
         super(name, parent);
-        this.addChild(new vfs.VfsStaticTextFile('version', this, version + '\n'));
+        let s = '  main.ts Version ' + version.version + '\n';
+        s += '  Started at: ' + version.startedAt.toISOString() + '\n';
+        const git = version.git;
+        if (git) {
+            s += this.gitInfoAsString('GIT:', git, '   ');
+        }
+        this.addChild(new vfs.VfsStaticTextFile('version', this, s));
     }
 
     public refresh(): Promise<vfs.VfsAbstractNode> {
         return Promise.resolve(this);
     }
+
+    private gitInfoAsString (name: string, git: GitInfo, prefix: string): string {
+        if (!git) {
+            return '';
+        }
+        let s = prefix + name + '\n';
+        s += prefix + '    branch: ' + git.branch + '\n';
+        s += prefix + '    commit: ' + git.hash + '\n';
+        if (git.tag) {
+            s += prefix + '       tag: ' + git.tag + '\n';
+        }
+        for (const r of git.remotes) {
+            s += prefix + '    remote: ' + r + '\n';
+        }
+        if (git.modified.length === 0) {
+            s += prefix + '   Status: no files modified\n';
+        } else {
+            s += prefix + '    Status: ' + git.modified.length + ' files modified\n';
+            const sep = prefix + '   ' + new Array(30).join('-') + '\n';
+            s += sep;
+            for (const m of git.modified) {
+                s += prefix + '       ' + m + '\n';
+            }
+            s += sep;
+        }
+        if (git.submodules.length > 0) {
+            for (const sm of git.submodules) {
+                s += this.gitInfoAsString('Submodule ' + sm.path, sm.gitInfo, prefix + '   ');
+            }
+        }
+        return s;
+    }
 }
 
 
 export interface IVfsConsole {
-  version: string;
+  version: AppVersion;
   out: NodeJS.WritableStream;
   prompt (preserveCursor?: boolean): void;
   setPrompt (prompt: string): void;
   exit (done: () => void): void;
 }
-
 

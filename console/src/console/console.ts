@@ -4,12 +4,14 @@ import { ReadLine, createInterface, CompleterResult } from 'readline';
 
 import * as vfs from './vfs';
 import { VfsShell, IVfsConsole } from './vfs-shell';
+import { AppVersion } from './vfs-shell-command';
 
 import * as debugsx from 'debug-sx';
 const debug: debugsx.ISimpleLogger = debugsx.createSimpleLogger('console:console');
 
+
 export class Console {
-    private _version: string;
+    private _version: AppVersion;
     private _out: NodeJS.WritableStream;
     private _readLine: ReadLine;
     private _shell: VfsShell;
@@ -17,7 +19,7 @@ export class Console {
     private _waitForResponse: (response: string) => void;
     private _osFsBase: string;
 
-    constructor (name: string, version: string, osFsBase?: string) {
+    constructor (name: string, version: AppVersion, osFsBase?: string) {
 
         this._version = version;
         this._osFsBase = osFsBase || '/tmp';
