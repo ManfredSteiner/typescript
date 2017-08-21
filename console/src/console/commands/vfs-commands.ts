@@ -210,7 +210,7 @@ class VfsCmdPwd extends VfsShellCommand {
 }
 
 class VfsCmdCat extends VfsShellCommand {
-    private _files: (path: string) => vfs.VfsAbstractNode [];
+    private _files: (path: string) => Promise<vfs.VfsAbstractNode []>;
 
     constructor (shellCmds: IVfsShellCmds) {
         super('cat', shellCmds);
@@ -222,41 +222,40 @@ class VfsCmdCat extends VfsShellCommand {
             this.end('Error (cat): missing arguments');
             return Promise.reject(1);
         }
+        const promisses: Promise<vfs.VfsAbstractNode []> [] = [];
         for (let i = 0; i < args.length; i++) {
-            const resources = this._files(args[i]);
-            if (Array.isArray(resources) && resources.length === 0) {
-                this.end('Error (cat): \'' + args[i] + '\' not found')
-                return Promise.reject(2);
-            } else if (Array.isArray(resources) && resources.length === 1 && !resources[0].stat.isFile()) {
-                this.end('Error (cat): \'' + args[i] + '\' is not a file')
-                return Promise.reject(2);
-            } else if (Array.isArray(resources) && resources.length === 1 && resources[0].stat.isFile()) {
-                return new Promise<number>( (resolve, reject) => {
-                    const end = (err?: any) => {
-                        if (err) {
-                            this.env.stderr.write('Error (cat): ' + err + '\n');
-                            this.end();
-                            reject(err);
-                        } else {
-                            // this.env.stdout.write('\n');
-                            this.end();
-                            resolve();
-                        }
-                    }
-                    const rs = vfs.createReadStream(resources[i]);
-                    rs.on('end', end);
-                    rs.on('error', end);
-                    rs.pipe(this.env.stdout).on('error', end);
-                    // const ws = new stream.Writable({ decodeStrings: false, write: (chunk, encoding, done) => {
-                    //     this.env.stdout.write(chunk);
-                    // }});
-                    // rs.pipe(ws);
-                });
-            } else {
-                this.end('Error (cat): \'' + args[i] + '\' multiple files, select one')
-                return Promise.reject(2);
-            }
+            promisses.push(this._files(args[i]));
         }
+        return new Promise<number>( (resolve, reject) => {
+            Promise.all(promisses).then( results => {
+                const end = (err?: any, exitcode?: number) => {
+                    if (err) {
+                        this.env.stderr.write('Error (cat): ' + err + '\n');
+                        this.end();
+                        resolve(exitcode || 255);
+                    } else {
+                        // this.env.stdout.write('\n');
+                        this.end();
+                        resolve(exitcode || 0);
+                    }
+                }
+                for (let i = 0; i < args.length; i++) {
+                    const resources = results[i];
+                    if (!Array.isArray(resources) || resources.length === 0) {
+                        end('\'' + args[i] + '\' not found', 2);
+                    } else if (resources.length > 1) {
+                        end('\'' + args[i] + '\' covers mutiple files, select one!', 3);
+                    } else if (!resources[0].stat.isFile()) {
+                        end('\'' + args[i] + '\' is not a file', 4);
+                    } else {
+                        const rs = vfs.createReadStream(resources[0]);
+                        rs.on('end', end);
+                        rs.on('error', end);
+                        rs.pipe(this.env.stdout).on('error', end);
+                    }
+                }
+            }).catch( err => this.handleError(err, reject, resolve, 5));
+        })
     }
 
     public getHelp (): string {
@@ -267,13 +266,14 @@ class VfsCmdCat extends VfsShellCommand {
         return ' file1 [...]';
     }
 
-    public completer (linePartial: string, parsedCommand: IParsedCommand): CompleterResult {
+    public completer (linePartial: string, parsedCommand: IParsedCommand): Promise<CompleterResult> {
         return this.completeAsFile(linePartial, parsedCommand);
     }
+
 }
 
 class VfsCmdCd extends VfsShellCommand {
-    private _cd: (path: string) => string;
+    private _cd: (path: string) => Promise<vfs.VfsDirectoryNode>;
 
     constructor (shellCmds: IVfsShellCmds) {
         super('cd', shellCmds);
@@ -285,13 +285,12 @@ class VfsCmdCd extends VfsShellCommand {
             this.end('cd: too much arguments');
             return Promise.reject(2);
         }
-        const errmsg = this._cd(args[0]);
-        if (errmsg) {
-            this.end('Error (' + this.name + '): ' + errmsg);
-            return Promise.reject(3);
-        }
-        this.end();
-        return Promise.resolve(0);
+        return new Promise<number>( (resolve, reject) => {
+            this._cd(args[0]).then(pwd => {
+                this.end();
+                resolve(0);
+            }).catch( err => this.handleError(err, reject, resolve, 3));
+        });
     }
 
     public getHelp (): string {
@@ -302,14 +301,16 @@ class VfsCmdCd extends VfsShellCommand {
         return '[~ | .. | . | path | ~/subpath]';
     }
 
-    public completer (linePartial: string, parsedCommand: IParsedCommand): CompleterResult {
+    public completer (linePartial: string, parsedCommand: IParsedCommand): Promise<CompleterResult> {
         return this.completeAsFile(linePartial, parsedCommand);
     }
 
 }
 
+interface VfsCmdLsItem { path: string, node: vfs.VfsAbstractNode, childs?: vfs.VfsAbstractNode [] };
+
 class VfsCmdLs extends VfsShellCommand {
-    private _files: (path: string) => vfs.VfsAbstractNode [];
+    private _files: (path: string) => Promise<vfs.VfsAbstractNode []>;
     private _pwd: () => vfs.VfsDirectoryNode;
 
     constructor (shellCmds: IVfsShellCmds) {
@@ -327,43 +328,95 @@ class VfsCmdLs extends VfsShellCommand {
     }
 
     public execute (args: string [], options: IVfsCommandOptions): Promise<number> {
-        let rv = 0;
         const asLine = options.listing;
-        for (let i = -1; i < args.length; i++) {
-            if (i === -1 && args.length > 0) { continue; }
-            const path = i === -1 ? '.' : args[i];
-            const resources = this._files(path) ;
-            if (!Array.isArray(resources) || resources.length === 0) {
-                this.env.stderr.write('Error (ls): \'' + path + '\' not found');
-                rv = 2;
-            } else {
-                for (const r of resources) {
-                    const stats = r.stat;
-                    if (stats && stats.isDirectory()) {
-                        if (options.directory) {
-                            this.printLine(r, options, stats);
-                        } else {
-                            if (args.length > 1) {
-                                this.println('\n' + path + ':');
-                            }
-                            const childs = this._files(path + '/*') || [];
-                            for (const c of childs) {
-                                this.printLine(c, options);
+        let printSubdirContent = !options.directory;
+        if (!Array.isArray(args) || args.length === 0) {
+            args = ['.'];
+            printSubdirContent = false;
+        }
+        return new Promise<number>( (resolve, reject) => {
+            const promisses: Promise<{ path: string, node: vfs.VfsAbstractNode, childs?: vfs.VfsAbstractNode [] } []> [] = [];
+            for (const a of args) {
+                promisses.push(this.handleArgument(a, printSubdirContent));
+            }
+            Promise.all(promisses).then( presults => {
+                let results: { path: string, node: vfs.VfsAbstractNode, childs?: vfs.VfsAbstractNode [] } [] = [];
+                for (const r of presults) {
+                    results = results.concat(r);
+                }
+                for (const r of results) {
+                    const stat = r.node.stat;
+                    if (stat.isDirectory() && printSubdirContent) {
+                        if (results.length > 1) {
+                            this.println('\n' + r.node.name + ':');
+                        }
+                        if (!Array.isArray(r.childs)) { continue };
+                        for (const c of r.childs) {
+                            if (asLine) {
+                                this.printLine(c, options, c.stat);
+                            } else {
+                                this.print(c.name + ' ');
                             }
                         }
+                    } else if (asLine) {
+                        this.printLine(r.node, options, r.node.stat);
                     } else {
-                        this.printLine(r, options, stats);
+                        this.print(r.node.name + (stat.isDirectory() ? '/ ' :  ' '));
                     }
                 }
-            }
-        }
-
-        this.env.stdout.write('\n');
-        this.end();
-        return Promise.resolve(rv);
+                if (!asLine) {
+                    this.println();
+                }
+                this.end();
+                resolve(0);
+            }).catch( err => this.handleError(err, reject, resolve, 1));
+        });
     }
 
-    public printLine (item: vfs.VfsAbstractNode, options: IVfsCommandOptions, stats?: vfs.Stats) {
+    public getHelp (): string {
+      return 'concatenate files and print on stdout';
+    }
+
+    public getSyntax (): string {
+        return '  [ --directory | -d] [ --listing | -l] file1 [...]';
+    }
+
+    public completer (linePartial: string, parsedCommand: IParsedCommand): Promise<CompleterResult> {
+        return this.completeAsFile(linePartial, parsedCommand);
+    }
+
+    private handleArgument (arg: string, includeChilds: boolean): Promise<VfsCmdLsItem []> {
+        return new Promise<any>( (resolve, reject) => {
+            const promisses: Promise<VfsCmdLsItem> [] = [];
+            this._files(arg).then( files => {
+                for (const f of files) {
+                    promisses.push(this.handleNode(arg, f, includeChilds));
+                }
+                Promise.all(promisses).then( results => resolve(results) ).catch( err => reject(err) );
+            }).catch( err => {
+                if (typeof err === 'string') {
+                    reject(err);
+                } else if (err instanceof Error) {
+                    reject(err)
+                } else {
+                  reject('Internal error on \'' + arg + '\'');
+                }
+            });
+        });
+    }
+
+    private handleNode (path: string, node: vfs.VfsAbstractNode, includeChilds: boolean): Promise<VfsCmdLsItem> {
+       return new Promise<any>( (resolve, reject) => {
+            const stat = node.stat;
+            if (!stat.isDirectory() || !includeChilds) {
+                resolve( { path: path, node: node } );
+            } else {
+                resolve( { path: path, node: node, childs: (<vfs.VfsDirectoryNode>node).childs });
+            }
+       });
+    }
+
+    private printLine (item: vfs.VfsAbstractNode, options: IVfsCommandOptions, stats?: vfs.Stats) {
         stats = stats || item.stat;
         let name = item.name;
         while (name.length < 20) { name += ' '; }
@@ -376,19 +429,6 @@ class VfsCmdLs extends VfsShellCommand {
 
 
     }
-
-    public getHelp (): string {
-      return 'concatenate files and print on stdout';
-    }
-
-    public getSyntax (): string {
-        return '  [ --directory | -d] [ --listing | -l] file1 [...]';
-    }
-
-    public completer (linePartial: string, parsedCommand: IParsedCommand): CompleterResult {
-        return this.completeAsFile(linePartial, parsedCommand);
-    }
-
 }
 
 

@@ -18,8 +18,10 @@ export class VfsCmdTemplate extends VfsShellCommand {
             return Promise.reject(1);
         }
         return new Promise<number>( (resolve, reject) => {
-            this.end();
-            resolve(0);
+            this.doit().then( () => {
+                this.end();
+                resolve(0);
+            }).catch( err => this.handleError(err, reject, resolve, 1));
         });
     }
 
@@ -31,7 +33,15 @@ export class VfsCmdTemplate extends VfsShellCommand {
         return '...';
     }
 
-    public completer (linePartial: string, parsedCommand: IParsedCommand): CompleterResult {
+    public completer (linePartial: string, parsedCommand: IParsedCommand): Promise<CompleterResult> {
         return this.completeAsFile(linePartial, parsedCommand);
+    }
+
+    private doit (): Promise<void> {
+        return new Promise<void>( (resolve, reject) => {
+            setTimeout( () => resolve(), 1000);
+            // setTimeout( () => reject('Fehler'), 1000);
+            // setTimeout( () => reject(new Error('Error by template')), 1000);
+        })
     }
 }

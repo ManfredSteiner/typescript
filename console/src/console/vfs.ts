@@ -1,4 +1,4 @@
-// import { VfsAbstractNode } from './vfs-filesystem';
+
 import * as fs from 'fs';
 import * as stream from 'stream';
 import * as events from 'events';
@@ -16,20 +16,32 @@ export function getRoot (): VfsDirectoryNode {
     return vfsfs.root;
 }
 
-export function getHomeDirectory (user: VfsUser): VfsDirectoryNode {
+export function setUser (user: VfsUser): VfsUser {
+    return vfsfs.setUser(user);
+}
+
+export function getHomeDirectory (user: VfsUser): Promise<VfsDirectoryNode> {
     return vfsfs.getHomeDirectory(user);
 }
 
-export function getChild (path: string, user: VfsUser, start: VfsDirectoryNode): VfsAbstractNode {
+export function getChild (path: string, user?: VfsUser, start?: VfsDirectoryNode): Promise<VfsAbstractNode> {
     return vfsfs.getChild(path, user, start);
 }
 
-export function getChilds (path: string, user: VfsUser, start: VfsDirectoryNode): VfsAbstractNode [] {
+export function getChilds (path: string, user?: VfsUser, start?: VfsDirectoryNode): Promise<VfsAbstractNode []> {
     return vfsfs.getChilds(path, user, start);
 }
 
-export function getDirectory (path: string, user: VfsUser, start: VfsDirectoryNode): VfsDirectoryNode {
+export function getDirectory (path: string, user?: VfsUser, start?: VfsDirectoryNode): Promise<VfsDirectoryNode> {
     return vfsfs.getDirectory(path, user, start);
+}
+
+export function getNodes (paths: string []): Promise<VfsAbstractNode []> {
+    return vfsfs.getNodes(paths);
+}
+
+export function getNode (path: string): Promise<VfsAbstractNode> {
+    return vfsfs.getNode(path);
 }
 
 export function readFile (path: PathLike | number | VfsAbstractNode,
@@ -37,14 +49,36 @@ export function readFile (path: PathLike | number | VfsAbstractNode,
     if (path instanceof VfsAbstractNode) {
         return path.readFile(options);
     }
+    if (typeof path === 'string') {
+        if (path.startsWith('file://')) {
+            path = path.substr(7);
+        } else if (path.startsWith('vfs://')) {
+            path = path.substr(6);
+            throw new Error('not implemented (Promise needed');
+        }
+    }
     return util.promisify(fs.readFile)(path, options);
 }
 
-export function stats (path: PathLike | VfsAbstractNode): Promise<fs.Stats> {
+export function stats (path: PathLike | VfsAbstractNode): Promise<Stats> {
     if (path instanceof VfsAbstractNode) {
         return Promise.resolve(path.stat);
     }
-    return util.promisify(fs.stat)(path);
+    if (typeof path === 'string') {
+        if (path.startsWith('file://')) {
+            path = path.substr(7);
+        } else if (path.startsWith('vfs://')) {
+            path = path.substr(6);
+            return new Promise<Stats>( (resolve, reject) => {
+                vfsfs.getChild(<string>path).then( (result) => resolve(result.stat) ).catch( (err) => reject(err) );
+            });
+        }
+    }
+    return new Promise<Stats>( (resolve, reject) => {
+        util.promisify(fs.stat)(<any>path).then( (stat) => {
+            resolve( new VfsOsFsStats(stat));
+        }).catch( err => reject(err) );
+    });
 }
 
 export function writeFile (path: PathLike | number | VfsAbstractNode, data: any,
@@ -52,6 +86,14 @@ export function writeFile (path: PathLike | number | VfsAbstractNode, data: any,
                                     | string | undefined | null): Promise<void> {
     if (path instanceof VfsAbstractNode) {
         return path.writeFile(data, options);
+    }
+    if (typeof path === 'string') {
+        if (path.startsWith('file://')) {
+            path = path.substr(7);
+        } else if (path.startsWith('vfs://')) {
+            path = path.substr(6);
+            throw new Error('not implemented (Promise needed');
+        }
     }
     return util.promisify(fs.writeFile)(path, options);
 }
@@ -70,6 +112,14 @@ export function createReadStream (path: PathLike | VfsAbstractNode,
     if (path instanceof VfsAbstractNode) {
         return path.createReadStream(options);
     }
+    if (typeof path === 'string') {
+        if (path.startsWith('file://')) {
+            path = path.substr(7);
+        } else if (path.startsWith('vfs://')) {
+            path = path.substr(6);
+            throw new Error('not implemented (Promise needed');
+        }
+    }
     return fs.createReadStream(path, options);
 }
 
@@ -85,6 +135,14 @@ export function createWriteStream (path: PathLike | VfsAbstractNode,
                                             }): stream.Writable {
     if (path instanceof VfsAbstractNode) {
         return path.createWriteStream(options);
+    }
+    if (typeof path === 'string') {
+        if (path.startsWith('file://')) {
+            path = path.substr(7);
+        } else if (path.startsWith('vfs://')) {
+            path = path.substr(6);
+            throw new Error('not implemented (Promise needed');
+        }
     }
     return fs.createWriteStream(path, options);
 }
@@ -287,18 +345,25 @@ export abstract class VfsDirectoryNode extends VfsAbstractNode {
     }
 
 
-    public getChild (path: string, user: VfsUser): VfsAbstractNode {
-        const rv = this.getChilds(path, user);
-        if (Array.isArray(rv) && rv.length === 1) {
-            return rv[0];
-        } else {
-            return undefined;
-        }
+    public getChild (path: string, user: VfsUser): Promise<VfsAbstractNode> {
+        return new Promise<VfsAbstractNode>( (resolve, reject) => {
+            this.getChilds(path, user).then( nodes => {
+                if (Array.isArray(nodes) && nodes.length === 1) {
+                    resolve(nodes[0]);
+                } else {
+                    resolve(undefined);
+                }
+
+            }).catch( err => reject(err) );
+        });
     }
 
-    public getChilds(path: string, user: VfsUser): VfsAbstractNode [] {
+    public getChilds (path?: string, user?: VfsUser, resultIfNotFound?: VfsAbstractNode): Promise<VfsAbstractNode []> {
+        user = user || vfsfs.getUser();
         if (!path || path === '') {
-            return [ this ];
+            return new Promise<VfsAbstractNode []>( (resolve, reject) => {
+                this.refresh().then( () => resolve( [ this ])).catch(err => reject(err) );
+            });
         }
         if (path[0] === '/') {
             // let r: VfsDirectoryNode = this;
@@ -306,51 +371,67 @@ export abstract class VfsDirectoryNode extends VfsAbstractNode {
             //     r = r.parent;
             // }
             // return r.getChild(path.substr(1), user);
-            return [ this.root ];
+            return Promise.resolve([ this.root ]);
         }
-        const index = path.indexOf('/');
-        const cn = index >= 0 ? path.substr(0, index) : path;
-        let sn = index >= 0 ? path.substr(index + 1) : '';
-        while (sn.startsWith('/')) {
-            sn = sn.substr(1);
-        }
-        switch (cn) {
-            case '.': return this.getChilds(sn, user);
-
-            case '..': {
-                if (this.parent && this.parent instanceof VfsDirectoryNode) {
-                    return this.parent.getChilds(sn, user);
-                } else {
-                    return undefined;
-                }
-            }
-
-            default: {
-                let x = '^';
-                for (const c of cn) {
-                    switch (c) {
-                        case '*': x += '.*'; break;
-                        case '?': x += '.'; break;
-                        case '.': x += '\\.'; break;
-                        case '\\': x += '\\\\'; break;
-                        default: x += c;
+        return new Promise<VfsAbstractNode []>( (resolve, reject) => {
+            this.refresh().then( () => {
+                const index = path.indexOf('/');
+                const cn = index >= 0 ? path.substr(0, index) : path;
+                let sn = index >= 0 ? path.substr(index + 1) : '';
+                while (sn.startsWith('/')) {
+                    sn = sn.substr(1);
+                    if (sn.startsWith('.') && !sn.startsWith('..')) {
+                        sn = sn.substr(1);
                     }
                 }
-                x += '$';
-                const regExp = new RegExp(x);
-                const result = this._childs.filter(item => {
-                    const r = item.name.match(regExp);
-                    return Array.isArray(r) && r.length > 0;
-                });
-                if (result.length > 0 && sn === '') {
-                    return result;
-                } else if (result.length === 1 && result[0] instanceof VfsDirectoryNode) {
-                    return (<VfsDirectoryNode>result[0]).getChilds(index >= 0 ? sn : '', user);
-                } else {
-                    return undefined;
+                switch (cn) {
+                    case '.': {
+                        resolve(this._childs);
+                        return;
+                    }
+
+                    case '..': {
+                        if (this.parent && this.parent instanceof VfsDirectoryNode) {
+                            this.parent.getChilds(sn, user).then( (results) => resolve(results) ).catch( err => reject(err));
+                        } else if (resultIfNotFound) {
+                            resolve([ resultIfNotFound ]);
+                        } else {
+                            resolve([]);
+                        }
+                        return;
+                    }
+
+                    default: {
+                        let x = '^';
+                        for (const c of cn) {
+                            switch (c) {
+                                case '*': x += '.*'; break;
+                                case '?': x += '.'; break;
+                                case '.': x += '\\.'; break;
+                                case '\\': x += '\\\\'; break;
+                                default: x += c;
+                            }
+                        }
+                        x += '$';
+                        const regExp = new RegExp(x);
+                        const result = this._childs.filter(item => {
+                            const r = item.name.match(regExp);
+                            return Array.isArray(r) && r.length > 0;
+                        });
+                        if (result.length === 1 && result[0] instanceof VfsDirectoryNode) {
+                            (<VfsDirectoryNode>result[0]).getChilds(index >= 0 ? sn : '', user).then( results => resolve(results) )
+                                                                                               .catch( err => reject(err) );
+                        } else if (result.length > 0 && sn === '') {
+                            resolve(result);
+                        } else if (resultIfNotFound) {
+                            resolve( [ resultIfNotFound ]);
+                        } else {
+                            reject(path + ' not found');
+                        }
+                    }
                 }
-            }
-        }
+            }).catch(err => reject(err));
+        });
     }
 
     public addChild (child: VfsAbstractNode, position?: number) {
@@ -471,12 +552,12 @@ export class VfsOsFsDirectory extends VfsDirectoryNode implements VfsOsFsNode {
         this._base = base;
     }
 
-    public getChild (path: string, user: VfsUser): VfsAbstractNode {
+    public getChild (path: string, user: VfsUser): Promise<VfsAbstractNode> {
         this.updateChilds();
         return super.getChild(path, user);
     }
 
-    public getChilds (path: string, user: VfsUser): VfsAbstractNode [] {
+    public getChilds (path?: string, user?: VfsUser): Promise<VfsAbstractNode []> {
         this.updateChilds();
         return super.getChilds(path, user);
     }
@@ -544,7 +625,7 @@ class VfsOsFsFile extends VfsAbstractNode implements VfsOsFsNode {
     private _base: string;
 
     constructor (name: string, parent: VfsDirectoryNode, base: string, stat?: Stats) {
-        super(name, parent, stat || new VfsOsFsStats(fs.statSync(base + '/' + name)));
+        super(name, parent, stat || new VfsOsFsFileStats(base + '/' + name));
         this._base = base;
     }
 
@@ -663,7 +744,7 @@ class VfsFileStats extends VfsAbstractNodeStats {
 
 class VfsOsFsStats extends VfsAbstractNodeStats {
 
-    private _fsstats: fs.Stats;
+    protected _fsstats: fs.Stats;
 
     constructor (stat: fs.Stats) {
         super();
@@ -708,15 +789,40 @@ class VfsOsFsStats extends VfsAbstractNodeStats {
     }
 }
 
+class VfsOsFsFileStats extends VfsOsFsStats {
+    constructor (path: string) {
+        super(undefined);
+        if (fs.existsSync(path)) {
+            this._fsstats = fs.statSync(path);
+        } else {
+            const fd = fs.openSync(path, 'w');
+            fs.closeSync(fd);
+            this._fsstats = fs.statSync(path);
+        }
+    }
+}
+
 class VfsFilesystem {
     private _root: VfsDirectoryNode;
+    private _whoami: VfsUser;
 
-    public constructor () {
+    public constructor (whoami?: VfsUser) {
         this._root = new VfsRootDirectory();
+        this._whoami = whoami;
     }
 
     public get root () {
         return this._root;
+    }
+
+    public getUser (): VfsUser {
+        return this._whoami;
+    }
+
+    public setUser (user: VfsUser): VfsUser {
+        const rv = this._whoami;
+        this._whoami = user;
+        return rv;
     }
 
     public refresh (): Promise<any> {
@@ -724,43 +830,146 @@ class VfsFilesystem {
     }
 
 
-    public getChild (path: string, user: VfsUser, start: VfsDirectoryNode): VfsAbstractNode {
+    public getChild (path: string, user?: VfsUser, start?: VfsDirectoryNode): Promise<VfsAbstractNode> {
+        user = user || this._whoami;
+        start = start || this._root;
         if (path.startsWith('/')) {
             return this._root.getChild(path.substr(1), user);
         }
         if (path === '~') {
-            return this.getHomeDirectory(user);
+            return Promise.resolve(this.getHomeDirectory(user));
         }
         if (path.startsWith('~/')) {
-            return this.getHomeDirectory(user).getChild(path.substr(2), user);
+            return new Promise<VfsAbstractNode>( (resolve, reject) => {
+                this.getHomeDirectory(user).then( (result) => {
+                    resolve(result.getChild(path.substr(2), user));
+                }).catch( err => reject(err));
+            });
         }
         return start.getChild(path, user);
     }
 
-    public getChilds (path: string, user: VfsUser, start: VfsDirectoryNode): VfsAbstractNode [] {
+    public getChilds (path: string, user?: VfsUser, start?: VfsDirectoryNode): Promise<VfsAbstractNode []> {
+        user = user || this._whoami;
+        start = start || this._root;
+        if (path.startsWith('file://')) {
+            return new Promise<VfsAbstractNode []>( (resolve, reject) => {
+                    this.getNode(path).then( node => {
+                    if (!node) {
+                        reject(path + ' not found');
+                    }
+                    if (!node.stat.isDirectory()) {
+                        resolve([]);
+                    } else {
+                        (<VfsDirectoryNode>node).getChilds().then( childs => {
+                            resolve(childs);
+                        }).catch( err => reject(err));
+                    }
+
+                }).catch( err => reject(err) );
+            });
+        }
         if (path.startsWith('/')) {
             return this._root.getChilds(path.substr(1), user);
         }
-        if (path === '~') {
-            return [ this.getHomeDirectory(user) ];
-        }
         if (path.startsWith('~/')) {
-            return this.getHomeDirectory(user).getChilds(path.substr(2), user);
+            return new Promise<VfsAbstractNode []>( (resolve, reject) => {
+                this.getHomeDirectory(user).then( (result) => {
+                    if (path === '~') {
+                        resolve([ result ]);
+                    } else {
+                        result.getChilds(path.substr(2), user).then( results => {
+                            resolve(results);
+                        }).catch( errors => reject(errors));
+                    }
+                }).catch( err => reject(err));
+            });
         }
         return start.getChilds(path, user);
     }
 
-    public getDirectory (path: string, user: VfsUser, start: VfsDirectoryNode): VfsDirectoryNode {
-        const rv = this.getChild (path, user, start);
-        if (rv instanceof VfsDirectoryNode) {
-            return rv;
-        } else {
-            return undefined;
-        }
+    public getDirectory (path: string, user?: VfsUser,
+                         start?: VfsDirectoryNode, resultIfNotFound?: VfsDirectoryNode): Promise<VfsDirectoryNode> {
+        user = user || this._whoami;
+        start = start || this._root;
+        return new Promise<VfsDirectoryNode>( (resolve, reject) => {
+            this.getChild(path, user, start).then( node => {
+                if (node instanceof VfsDirectoryNode) {
+                    resolve(node);
+                } else {
+                    resolve(resultIfNotFound);
+                }
+            }).catch( err => reject(err) );
+        });
     }
 
-    public getHomeDirectory(user: VfsUser): VfsDirectoryNode {
-        return this.getDirectory(user.home, user, undefined) || this._root;
+    public getNodes (paths: string []): Promise<VfsAbstractNode []> {
+        if (!Array.isArray(paths) || paths.length === 0) {
+            return Promise.resolve([]);
+        }
+        const promisses: Promise<VfsAbstractNode> [] = [];
+        for (const p of paths) {
+            promisses.push(this.getNode(p));
+        }
+        return Promise.all(promisses);
+    }
+
+    public createFileNode (path: string): Promise<VfsAbstractNode> {
+        return Promise.reject(new Error('not implemented'));
+    }
+
+    public createDirectoryNode (path: string): Promise<VfsDirectoryNode> {
+        return Promise.reject(new Error('not implemented'));
+    }
+
+    public getNode (path: string): Promise<VfsAbstractNode> {
+        if (!path || path === '') {
+            return Promise.resolve(undefined);
+        }
+        if (path.startsWith('file://')) {
+            path = path.substr(7);
+            let base, name;
+            const i = path.lastIndexOf('/');
+            if (i < 0) {
+                base = '';
+                name = path;
+            } else {
+                base = path.substr(0, i);
+                name = path.substr(i + 1);
+            }
+
+            if (fs.existsSync(path)) {
+                const stat = fs.statSync(path);
+                if (stat.isFile()) {
+                    return Promise.resolve(new VfsOsFsFile(name, undefined, base));
+                } else if (stat.isDirectory()) {
+                    return Promise.resolve(new VfsOsFsDirectory('', undefined, path));
+                }
+                return Promise.reject('file type of \'' + path + '\' not supported')
+            } else {
+                return Promise.resolve(undefined);
+            }
+            //     return Promise.resolve(new VfsOsFsFile(name, undefined, base));
+            // }
+            // try {
+            //     return Promise.resolve(new VfsOsFsFile(name, undefined, base));
+            // } catch (err) {
+            //     if (err instanceof Error && err.message) {
+            //         // in case of new file cannot be created
+            //         return Promise.reject(err.message);
+            //     } else {
+            //         return Promise.reject(err);
+            //     }
+            // }
+        }
+        if (path.startsWith('vfs://')) {
+            path = path.substr(6);
+        }
+        return this.getChild(path);
+    }
+
+    public getHomeDirectory(user: VfsUser): Promise<VfsDirectoryNode> {
+        return this.getDirectory(user.home, user, undefined, this._root);
     }
 
 }

@@ -7,6 +7,9 @@ import { Readable, Writable } from 'stream';
 import * as stream from 'stream';
 import { CompleterResult } from 'readline';
 
+import * as debugsx from 'debug-sx';
+const debug: debugsx.ISimpleLogger = debugsx.createSimpleLogger('console:vfs-shell-command');
+
 
 
 export abstract class VfsShellCommand {
@@ -36,8 +39,9 @@ export abstract class VfsShellCommand {
     public abstract getHelp (): string [] | string;
     public abstract getSyntax (): string [] | string;
 
-    public completer (linePartial: string, parsedCommand: IParsedCommand): CompleterResult {
-        return undefined;
+    public completer (linePartial: string, parsedCommand: IParsedCommand): Promise<CompleterResult> {
+        const rv: CompleterResult = [ [], linePartial ];
+        return Promise.resolve(rv);
     }
 
     public optionConfig (): IVfsCommandOptionConfig {
@@ -50,6 +54,28 @@ export abstract class VfsShellCommand {
 
     public isInterrupted (): boolean {
         return this._interrupted;
+    }
+
+    public handleError (err: any, reject: Function, resolve?: Function, exitCode?: number) {
+        this.env.stderr.write('Error (' + this.name + ')');
+        if (typeof err === 'string') {
+            this.env.stderr.write(': ' + err + '\n');
+            if (resolve) {
+                resolve(exitCode || 255);
+            } else {
+                reject(err);
+            }
+        } else if (err instanceof Error && err.message) {
+            this.env.stderr.write(': ' + err.message + '\n');
+            this.env.stderr.write('  ' + err.stack + '\n');
+            reject(err);
+        } else {
+            debug.warn(err);
+            this.env.stderr.write(': internal error\n');
+            this.env.stderr.write('  ' + err.stack + '\n');
+            reject(err);
+        }
+        this.end();
     }
 
     protected end (error?: any) {
@@ -142,7 +168,7 @@ export abstract class VfsShellCommand {
         return rv;
     }
 
-    protected completeAsFile (linePartial: string, parsedCommand: IParsedCommand): CompleterResult {
+    protected completeAsFile (linePartial: string, parsedCommand: IParsedCommand): Promise<CompleterResult> {
         return this._shellCmds.completeAsFile(linePartial, parsedCommand.args);
     }
 
@@ -246,9 +272,9 @@ export class PipeWritable extends Writable {
 
 export interface IVfsShellCmds {
     alias: (alias: string, args: string []) => string,
-    cd: (path: string) => string,
-    completeAsFile: (linePartial: string, args: string []) => CompleterResult;
-    files: (path: string) => vfs.VfsAbstractNode [],
+    cd: (path: string) => Promise<vfs.VfsDirectoryNode>,
+    completeAsFile: (linePartial: string, args: string []) => Promise<CompleterResult>;
+    files: (path: string) => Promise<vfs.VfsAbstractNode []>,
     pwd: () => vfs.VfsDirectoryNode,
     version: () => string
 

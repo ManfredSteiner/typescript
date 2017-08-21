@@ -27,7 +27,13 @@ export class VfsShell {
     private _aliases: { [ key: string ]: string []};
 
     public constructor (console: IVfsConsole, name: string, user: vfs.VfsUser, version?: string, osFsBase?: string) {
-        this._pwd = vfs.getDirectory(user.home, user, vfs.getRoot() ) || vfs.getRoot();
+        this._pwd = vfs.getRoot();
+        vfs.setUser(user);
+        vfs.getDirectory(user.home, user, vfs.getRoot() ).then( result => {
+            if (result) {
+                this._pwd = result;
+            }
+        }).catch(err => debug.warn(err));
         this._console = console;
         this._name = name;
         this._user = user;
@@ -77,6 +83,34 @@ export class VfsShell {
     }
 
     public handleInput (line?: string): void {
+        const endOnError = (err: any) => {
+            if (err instanceof Error) {
+                this._env.stderr.write('Internal error' + (err.message ? ': ' + err.message : '') + '\n');
+                this._lastExitCode = 255;
+                this._lastError = err;
+                debug.warn(err);
+            } else if (typeof err === 'string') {
+                this._env.stderr.write(err + '\n');
+                this._lastExitCode = 255;
+                this._lastError = err;
+            } else if (typeof err === 'number') {
+                this._lastExitCode = err;
+                this._lastError = undefined;
+            } else {
+                this._env.stderr.write('Internal error\n');
+                this._lastExitCode = 255;
+                this._lastError = err;
+            }
+            this._cmdPending = false;
+            this.handleInput();
+        };
+        const endOk = () => {
+            this._cmdPending = false;
+            this._lastExitCode = 0;
+            this._lastError = undefined;
+            this.handleInput();
+        };
+
         let lineFromInput = true;
         if (!line) {
             line = this._waitingCommands.shift();
@@ -110,20 +144,17 @@ export class VfsShell {
         const cmds: { parsedCmd: IParsedCommand, env?: IVfsEnvironment, promise?: Promise<number> } [] = [];
         for (const c of parsedInput.cmds) {
             if (!c.valid) {
-                this._env.stderr.write('Error: invalid command ' + c.cmdString + '\n');
-                this._cmdPending = false;
-                this.handleInput();
+                endOnError('Error: invalid command ' + c.cmdString);
                 return;
             }
             cmds.push({ parsedCmd: c });
         }
         if (!parsedInput.valid) {
-            this._env.stderr.write('Error: invalid command\n');
-            this._cmdPending = false;
-            this.handleInput();
+            endOnError('Error: invalid command');
             return;
         }
 
+        const promisses: Promise<{ parsedCmd: IParsedCommand, env?: IVfsEnvironment, promise?: Promise<number> }> [] = [];
         for (let i = cmds.length - 1; i >= 0; i--) {
             const env: IVfsEnvironment = Object.assign( {}, this._env );
             if (i < (cmds.length - 1)) {
@@ -138,36 +169,37 @@ export class VfsShell {
                 env.stdin = new Readable( { read: function (size) { this.push(null); } });
             }
 
-            this.handleRedirection(cmds[i].parsedCmd, env);
-            cmds[i].env = env;
+            const redirects = this.parseRedirection(cmds[i].parsedCmd, env);
+            cmds[i].env = env
+            promisses.push(new Promise<any>( (resolve, reject) => {
+                vfs.getNodes(redirects).then( nodes => {
+                    env.stdin = nodes[0] ? vfs.createReadStream(nodes[0]) : env.stdin;
+                    env.stdout = nodes[1] ? vfs.createWriteStream(nodes[1]) : env.stdout;
+                    env.stderr = nodes[2] ? vfs.createWriteStream(nodes[2]) : env.stderr;
+                    resolve(cmds[i]);
+                }).catch( err => reject(err) );
+            }));
         }
-
-        const cmdPromisses: Promise<number> [] = [];
-        for (let i = 0; i < cmds.length; i++) {
-           const c = cmds[i];
-           (<any>c.parsedCmd.cmd)._env = c.env;
-           this._cmdPending = true;
-           const options: IVfsCommandOptions = {};
-           for (const o of c.parsedCmd.options) {
-               options[o.name] = o;
-           }
-           c.promise = c.parsedCmd.cmd.execute(c.parsedCmd.args, options);
-           cmdPromisses.push(c.promise);
-        }
-
-        Promise.all(cmdPromisses).then( () => {
-            this._cmdPending = false;
-            this._lastExitCode = 0;
-            this._lastError = undefined;
-            this.handleInput();
-        }).catch( err => {
-            // this._env.stdout.write('\n');
-            this._cmdPending = false;
-            this._lastExitCode = err;
-            this._lastError = err;
-            this.handleInput();
-        })
-
+        Promise.all(promisses).then( (commands) => {
+            const cmdPromisses: Promise<number> [] = [];
+            for (let i = 0; i < commands.length; i++) {
+                const c = commands[i];
+                (<any>c.parsedCmd.cmd)._env = c.env;
+                this._cmdPending = true;
+                const options: IVfsCommandOptions = {};
+                for (const o of c.parsedCmd.options) {
+                    options[o.name] = o;
+                }
+                c.promise = c.parsedCmd.cmd.execute(c.parsedCmd.args, options);
+                cmdPromisses.push(c.promise);
+            }
+            let timeout = 5000;
+            Promise.all(cmdPromisses).then( () => {
+                timeout = -1;
+                endOk();
+            }).catch( err => { timeout = -1; endOnError(err) });
+            setTimeout(() => { if (timeout !== -1) { endOnError('command hanging'); } }, timeout);
+        }).catch( err => endOnError(err) );
     }
 
 
@@ -228,21 +260,26 @@ export class VfsShell {
             const cmd = parsedCmd.cmd;
             if (this.completerLongOption(linePartial, callback, cmd, parsedCmd)) { return; }
             if (this.completerShortOption(linePartial, callback, cmd, parsedCmd)) { return; }
-            let completerResult: CompleterResult;
             if (parsedCmd.args.length >= 1) {
                 const arg = parsedCmd.args[parsedCmd.args.length - 1];
                 if ((arg === '<' || arg === '>' || arg === '1>' || arg === '2>') && linePartial.endsWith(' ')) {
-                    completerResult = this.cmdCompleteAsFile(linePartial, []);
+                    this.cmdCompleteAsFile(linePartial, []).then( (completerResult) => {
+                        callback(null, completerResult);
+                    }).catch( () => callback(null, [[], linePartial]) );
                 }
             }
-            if (!completerResult && parsedCmd.args.length >= 2) {
+            if (parsedCmd.args.length >= 2) {
                 const arg = parsedCmd.args[parsedCmd.args.length - 2];
                 if (arg === '<' || arg === '>' || arg === '1>' || arg === '2>') {
-                    completerResult = this.cmdCompleteAsFile(linePartial, parsedCmd.args);
+                    this.cmdCompleteAsFile(linePartial, []).then( (completerResult) => {
+                        callback(null, completerResult);
+                    }).catch( () => callback(null, [[], linePartial]) );
                 }
             }
 
-            callback(null, completerResult || parsedCmd.cmd.completer(linePartial, parsedCmd) || [ [], linePartial]);
+            parsedCmd.cmd.completer(linePartial, parsedCmd).then( (completerResult) => {
+                callback(null, completerResult);
+            }).catch( () => callback(null, [[], linePartial]) );
             return;
         }
 
@@ -460,7 +497,7 @@ export class VfsShell {
     }
 
 
-    private handleRedirection (cmd: IParsedCommand, env: IVfsEnvironment) {
+    private parseRedirection (cmd: IParsedCommand, env: IVfsEnvironment): string [] {
         const redirect: string [] = [ undefined, undefined, undefined ];
         for (let j = 0; j < cmd.args.length; j++) {
             const arg = cmd.args[j];
@@ -504,100 +541,68 @@ export class VfsShell {
                 default: break;
             }
         }
-
-        for (const i of [ 1, 2]) {
-            if (redirect[i]) {
-                let os: stream.Writable;
-                if (redirect[i].startsWith('file://')) {
-                    os = vfs.createWriteStream(redirect[i].substr(7));
-                } else {
-                    if (redirect[i].startsWith('vfs://')) {
-                        redirect[i] = redirect[i].substr(6);
-                    }
-                    const node = vfs.getChild(redirect[i], undefined, vfs.getRoot());
-                    if (node) {
-                        os = node.createWriteStream();
-                    }
-                }
-                if (!os) {
-                    this._env.stderr.write('Error: ' + (i === 1 ? 'stdout' : 'stderr') + ' redirection to ' + redirect[i] + ' fails\n');
-                    os = new stream.Writable({ write: function (chunk: any) {} });
-                }
-                if (i === 1 && os) {
-                    env.stdout = os;
-                } else {
-                    env.stderr = os;
-                }
-            }
-        }
-
-        if (redirect[0]) {
-            let is: stream.Readable;
-            if (redirect[0].startsWith('file://')) {
-                is = vfs.createReadStream(redirect[0].substr(7));
-            } else {
-                if (redirect[0].startsWith('vfs://')) {
-                    redirect[0] = redirect[0].substr(6);
-                }
-                const node = vfs.getChild(redirect[0], undefined, vfs.getRoot());
-                if (node) {
-                    is = node.createReadStream();
-                }
-            }
-            if (!is) {
-                this._env.stderr.write('Error: stdin redirection to ' + redirect[0] + ' fails\n');
-                is = new stream.Readable({ read: function () { this.push(null); } });
-            }
-            env.stdin = is;
-        }
+        return redirect;
     }
 
 
-    private cmdCd (path: string): string {
+    private cmdCd (path: string): Promise<vfs.VfsDirectoryNode> {
         if (!path) {
-            this._pwd = vfs.getHomeDirectory(this._user);
-            return undefined;
+            path = '~';
         }
-        const p = vfs.getDirectory(path, this._user, this._pwd);
-        if (!p) {
-            return '\'' + path + '\' not found!';
-        }
-        this._pwd = p;
-        this.setPrompt();
-        return undefined;
+        return new Promise<vfs.VfsDirectoryNode>( (resolve, reject) => {
+            vfs.getDirectory(path, this._user, this._pwd).then( (result) => {
+                if (result) {
+                    this._pwd = result;
+                    this.setPrompt();
+                    resolve(result);
+                } else {
+                    reject('\'' + path + '\' not found!');
+                }
+            }).catch(err => {
+                debug.warn(err);
+                reject('\'' + path + '\' not found (VFS Error)!');
+            });
+        });
     }
 
-    private cmdCompleteAsFile (linePartial: string, args: string []): CompleterResult {
-        if (args) {
-            let filter = '*';
-            let fileNamePartial = '';
-            if (args.length > 0) {
-                fileNamePartial = args[args.length - 1 ]
-                filter = fileNamePartial + '*';
-                const i = fileNamePartial.lastIndexOf('/');
-                if (i >= 0) {
-                    if (fileNamePartial.length !== (i + 1)) {
-                        fileNamePartial = fileNamePartial.substr(i + 1);
+    private cmdCompleteAsFile (linePartial: string, args: string []): Promise<CompleterResult> {
+        if (!args) {
+            Promise.resolve( [ [], linePartial] );
+        }
+
+        let filter = '*';
+        let fileNamePartial = '';
+        if (args.length > 0) {
+            fileNamePartial = args[args.length - 1 ]
+            filter = fileNamePartial + '*';
+            const i = fileNamePartial.lastIndexOf('/');
+            if (i >= 0) {
+                if (fileNamePartial.length !== (i + 1)) {
+                    fileNamePartial = fileNamePartial.substr(i + 1);
+                } else {
+                    fileNamePartial = '';
+                }
+            }
+        }
+        return new Promise<CompleterResult>( (resolve, reject) => {
+            vfs.getChilds(filter, this._user, this._pwd).then( (files) => {
+                const hits: string [] = [];
+                for (const f of files) {
+                    if (f instanceof vfs.VfsDirectoryNode) {
+                        hits.push(f.name + '/');
                     } else {
-                        fileNamePartial = '';
+                        hits.push(f.name);
                     }
                 }
-            }
-            const files = this._shellCmds.files(filter) || [];
-            const hits: string [] = [];
-            for (const f of files) {
-                if (f instanceof vfs.VfsDirectoryNode) {
-                    hits.push(f.name + '/');
-                } else {
-                    hits.push(f.name);
-                }
-            }
-            return [ hits, fileNamePartial ];
-        }
-        return undefined;
+                resolve( [ hits, fileNamePartial ] );
+            }).catch( (err) => {
+                // resolve([ [], linePartial]);
+                resolve([ [], linePartial ]);
+             });
+        });
     }
 
-    private cmdFiles (path: string): vfs.VfsAbstractNode [] {
+    private cmdFiles (path: string): Promise<vfs.VfsAbstractNode []> {
         const p = vfs.getChilds(path, this._user, this._pwd);
         return p;
     }

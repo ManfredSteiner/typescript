@@ -45,7 +45,7 @@ export class VfsCmdTest extends VfsShellCommand {
         return 'value x w';
     }
 
-    public completer (linePartial: string, parsedCommand: IParsedCommand): CompleterResult {
+    public completer (linePartial: string, parsedCommand: IParsedCommand): Promise<CompleterResult> {
         return this.completeAsFile(linePartial, parsedCommand);
     }
 
