@@ -703,12 +703,16 @@ abstract class VfsAbstractNodeStats implements Stats {
     public get blocks (): number { return -1; };
     public get fsstats (): fs.Stats { return undefined };
     public get atime (): Date { return this._atime; }
+    public get atimeMs (): number { return this.atime.getMilliseconds(); }
     public get mtime (): Date { return this._mtime; }
+    public get mtimeMs (): number { return this._mtime.getMilliseconds(); }
     public get ctime (): Date { return this._ctime; }
+    public get ctimeMs (): number { return this._ctime.getMilliseconds(); }
     public set atime (value: Date) { this._atime = value; }
     public set mtime (value: Date) { this._atime = value; }
     public set ctime (value: Date) { this._atime = value; }
     public get birthtime (): Date { return this._birthtime; }
+    public get birthtimeMs (): number { return this._birthtime.getMilliseconds(); }
     public isFile(): boolean { return false; }
     public isDirectory(): boolean { return false; }
     public isBlockDevice(): boolean { return false; }
@@ -742,7 +746,7 @@ class VfsFileStats extends VfsAbstractNodeStats {
     }
 }
 
-class VfsOsFsStats extends VfsAbstractNodeStats {
+class VfsOsFsStats extends VfsAbstractNodeStats implements Stats {
 
     protected _fsstats: fs.Stats;
 
@@ -755,9 +759,13 @@ class VfsOsFsStats extends VfsAbstractNodeStats {
     public get gid (): number { return this._fsstats.gid; }
     public get size (): number { return this._fsstats.size; }
     public get atime (): Date { return this._fsstats.atime; }
+    public get atimeMs (): number { return this._fsstats.atimeMs; }
     public get mtime (): Date { return this._fsstats.mtime; }
+    public get mtimeMs (): number { return this._fsstats.mtimeMs; }
     public get ctime (): Date { return this._fsstats.ctime; }
+    public get ctimeMs(): number { return this._fsstats.ctimeMs; }
     public get birthtime (): Date { return this._fsstats.birthtime; }
+    public get birthtimeMs(): number { return this._fsstats.birthtimeMs; }
     public get fsstats (): fs.Stats { return this.fsstats; }
     public isFile(): boolean { return this._fsstats.isFile(); }
     public isDirectory(): boolean { return this._fsstats.isDirectory(); }
