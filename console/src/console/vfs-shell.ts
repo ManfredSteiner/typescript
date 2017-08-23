@@ -63,6 +63,15 @@ export class VfsShell {
         return this._pwd.refreshAll();
     }
 
+    public addCommand (cmd: VfsShellCommand): VfsShellCommand {
+        const rv = this._commands[cmd.name];
+        this._commands[cmd.name] = cmd;
+        return rv;
+    }
+
+    public get shellCommands (): IVfsShellCmds {
+        return this._shellCmds;
+    }
 
     public get console (): IVfsConsole {
         return this._console;
@@ -313,7 +322,7 @@ export class VfsShell {
                 if (s.length > 0) { rv.push(s); s = ''; }
             } else if (!mode && (c === '"' || c === '\'')) {
                 mode = c;
-            } else if (mode && (c === '"' || c === '\'')) {
+            } else if (mode && (c === mode)) {
                 mode = undefined;
                 if (s.length > 0) { rv.push(s); s = ''; }
             } else if (mode === '\'') {
@@ -332,12 +341,17 @@ export class VfsShell {
                    case 'r': s += '\r'; break;
                    case 't': s += '\t'; break;
                    case '$': s += '$'; break;
+                   case '"': s += '"'; break;
                    case '0': s += '\0'; break;
                    default:  s += '\\' + c;
                 }
             } else {
                 s += c;
             }
+        }
+        if (mode !== undefined) {
+            this._env.stderr.write('Error: unclosed ' + mode + '\n');
+            return [];
         }
         if (s.length > 0) {
             rv.push(s);

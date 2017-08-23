@@ -46,6 +46,10 @@ export class Console {
         return this._out;
     }
 
+    public getShell (): VfsShell {
+        return this._shell;
+    }
+
     public refresh (): Promise<any> {
         return this._shell.refresh();
     }

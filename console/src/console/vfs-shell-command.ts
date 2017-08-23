@@ -81,7 +81,7 @@ export abstract class VfsShellCommand {
     protected end (error?: any) {
       if (error) {
           if (typeof(error) === 'string') {
-              this.env.stderr.write(error + '\n');
+              this.env.stderr.write('Error (' + this.name + '): ' + error + '\n');
           } else if (error instanceof Error && typeof(error.message) === 'string') {
               this.env.stderr.write(error.message + '\n');
           } else {

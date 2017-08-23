@@ -530,8 +530,14 @@ export abstract class VfsDynamicTextDataFile extends VfsAbstractNode {
         const ws = new stream.Writable({ decodeStrings: false, write: function (chunk, encoding, done) {
                                            rs.push(chunk); done();
                                        } });
-        this.createContent(new FormatterStream(ws));
-        rs.destroy();
+        const os = new FormatterStream(ws);
+        os.on('error', (err) => {
+            rs.emit('error', err);
+        });
+        process.nextTick( () => {
+            this.createContent(os);
+            rs.destroy();
+        })
         return rs;
     }
 
@@ -1005,11 +1011,18 @@ export class FormatterStream extends stream.Writable {
         this._enabled = true;
     }
 
-    public _write(chunk: any, enc: string, next: Function): void {
+    public _write (chunk: any, enc: string, next: Function): void {
         if (this._enabled) {
             this._out.write(chunk);
         }
         next();
+    }
+
+    public _destroy (error: Error, cb: Function) {
+        if (error) {
+            this.emit('error', error);
+        }
+        super._destroy(error, cb);
     }
 
     public set enabled (value: boolean) {

@@ -151,12 +151,12 @@ class VfsCmdGrep extends VfsShellCommand {
       }
       return new Promise<number>( (resolve, reject) => {
         // this.env.stdin.on('data', (chunk) => { this.nextLine(chunk); });
-        const stream = byline.createStream(this.env.stdin);
+        const is = byline.createStream(this.env.stdin);
         this.env.stdin.on('error', (err) => { });
         // this.env.stdin.on('end', () => { resolve(0); });
-        stream.on('data', this.nextLine.bind(this));
-        stream.on('end', () => { resolve(0); });
-        this.env.stdin.on('close', () => { stream.destroy(); } );
+        is.on('data', this.nextLine.bind(this));
+        is.on('end', () => { resolve(0); });
+        this.env.stdin.on('close', () => { is.destroy(); } );
         // this.env.stdin.resume();
         // debugger;
         // stream.on('close', () => { debugger; });
@@ -230,6 +230,9 @@ class VfsCmdCat extends VfsShellCommand {
             Promise.all(promisses).then( results => {
                 const end = (err?: any, exitcode?: number) => {
                     if (err) {
+                        if (err instanceof Error && err.message) {
+                            err = err.message;
+                        }
                         this.env.stderr.write('Error (cat): ' + err + '\n');
                         this.end();
                         resolve(exitcode || 255);
