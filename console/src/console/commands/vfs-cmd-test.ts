@@ -1,5 +1,6 @@
 
-import { VfsShellCommand, IVfsShellCmds, IVfsCommandOptionConfig, IParsedCommand, IVfsCommandOptions } from '../vfs-shell-command';
+import { VfsShellCommand, IVfsShellCmds, IVfsCommandOptionConfig, IParsedCommand, IVfsCommandOptions,
+         CmdCompleterResult } from '../vfs-shell-command';
 import { CompleterResult } from 'readline';
 
 
@@ -45,8 +46,8 @@ export class VfsCmdTest extends VfsShellCommand {
         return 'value x w';
     }
 
-    public completer (linePartial: string, parsedCommand: IParsedCommand): Promise<CompleterResult> {
-        return this.completeAsFile(linePartial, parsedCommand);
+    public completer (line: string, parsedCommand: IParsedCommand, argIndex: number): Promise<CmdCompleterResult> {
+        return Promise.resolve({ isFile: true });
     }
 
 

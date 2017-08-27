@@ -1,6 +1,7 @@
 
 import * as vfs from '../vfs';
-import { VfsShellCommand, IVfsShellCmds, IVfsCommandOptionConfig, IParsedCommand, IVfsCommandOptions } from '../vfs-shell-command';
+import { VfsShellCommand, IVfsShellCmds, IVfsCommandOptionConfig, IParsedCommand, IVfsCommandOptions,
+         CmdCompleterResult } from '../vfs-shell-command';
 import { VfsCmdTest } from './vfs-cmd-test';
 
 import { CompleterResult } from 'readline';
@@ -269,10 +270,9 @@ class VfsCmdCat extends VfsShellCommand {
         return ' file1 [...]';
     }
 
-    public completer (linePartial: string, parsedCommand: IParsedCommand): Promise<CompleterResult> {
-        return this.completeAsFile(linePartial, parsedCommand);
+    public completer (line: string, parsedCommand: IParsedCommand, argIndex: number): Promise<CmdCompleterResult> {
+        return Promise.resolve({ isFile: true });
     }
-
 }
 
 class VfsCmdCd extends VfsShellCommand {
@@ -304,8 +304,8 @@ class VfsCmdCd extends VfsShellCommand {
         return '[~ | .. | . | path | ~/subpath]';
     }
 
-    public completer (linePartial: string, parsedCommand: IParsedCommand): Promise<CompleterResult> {
-        return this.completeAsFile(linePartial, parsedCommand);
+    public completer (line: string, parsedCommand: IParsedCommand, argIndex: number): Promise<CmdCompleterResult> {
+        return Promise.resolve({ isFile: true });
     }
 
 }
@@ -384,8 +384,9 @@ class VfsCmdLs extends VfsShellCommand {
         return '  [ --directory | -d] [ --listing | -l] file1 [...]';
     }
 
-    public completer (linePartial: string, parsedCommand: IParsedCommand): Promise<CompleterResult> {
-        return this.completeAsFile(linePartial, parsedCommand);
+
+    public completer (line: string, parsedCommand: IParsedCommand, argIndex: number): Promise<CmdCompleterResult> {
+        return Promise.resolve({ isFile: true });
     }
 
     private handleArgument (arg: string, includeChilds: boolean): Promise<VfsCmdLsItem []> {

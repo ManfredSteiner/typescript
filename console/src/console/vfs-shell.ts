@@ -1,8 +1,7 @@
-
 import * as vfs from './vfs';
 import { IVfsEnvironment, IVfsShellCmds, PipeReadable, PipeWritable, VfsShellCommand,
          IParsedCommands, IParsedCommand, IVfsCommandOption, IVfsCommandOptions,
-         AppVersion, GitInfo } from './vfs-shell-command';
+         AppVersion, GitInfo, CmdCompleterResult } from './vfs-shell-command';
 import { addDefaultCommands } from './commands/vfs-commands';
 
 import * as stream from 'stream';
@@ -268,8 +267,10 @@ export class VfsShell {
         const parsedCmd = parsedInput.cmds[0];
         if (parsedCmd && parsedCmd.cmd) {
             const cmd = parsedCmd.cmd;
-            if (this.completerLongOption(linePartial, callback, cmd, parsedCmd)) { return; }
-            if (this.completerShortOption(linePartial, callback, cmd, parsedCmd)) { return; }
+            if (parsedCmd.args.length === 1) {
+                if (this.completerLongOption(linePartial, callback, cmd, parsedCmd)) { return; }
+                if (this.completerShortOption(linePartial, callback, cmd, parsedCmd)) { return; }
+            }
             if (parsedCmd.args.length >= 1) {
                 const arg = parsedCmd.args[parsedCmd.args.length - 1];
                 if ((arg === '<' || arg === '>' || arg === '1>' || arg === '2>') && linePartial.endsWith(' ')) {
@@ -278,18 +279,68 @@ export class VfsShell {
                     }).catch( () => callback(null, [[], linePartial]) );
                 }
             }
-            if (parsedCmd.args.length >= 2) {
-                const arg = parsedCmd.args[parsedCmd.args.length - 2];
-                if (arg === '<' || arg === '>' || arg === '1>' || arg === '2>') {
-                    this.cmdCompleteAsFile(linePartial, []).then( (completerResult) => {
-                        callback(null, completerResult);
-                    }).catch( () => callback(null, [[], linePartial]) );
-                }
+
+            let argIndex = parsedCmd.args.length;
+            if (!linePartial.endsWith(' ')) {
+                argIndex = argIndex - 1;
             }
 
-            parsedCmd.cmd.completer(linePartial, parsedCmd).then( (completerResult) => {
-                callback(null, completerResult);
-            }).catch( () => callback(null, [[], linePartial]) );
+            const rv: CompleterResult = [ [], '' ];
+            parsedCmd.cmd.completer(linePartial, parsedCmd, argIndex).then( (result) => {
+                if (result.completerResult) {
+                    callback(null, result.completerResult);
+                    return;
+                }
+                if (argIndex >= 0 && result.isFile) {
+                    this._shellCmds.completeAsFile(linePartial, parsedCmd.args).then( completerResult => {
+                        callback(null, completerResult);
+                    }).catch( () => rv);
+                }
+                if (result.choices) {
+                    const choiceArray = Array.isArray(result.choices) ? result.choices : [ result.choices ];
+                    const hits = choiceArray.filter((c) => c.startsWith(parsedCmd.args[argIndex]));
+                    rv[0] = hits.length > 0 ? hits : choiceArray;
+                    if (hits.length === 1) {
+                        rv[1] = parsedCmd.args[argIndex];
+                    }
+                    if (hits.length !== 1 || parsedCmd.args[argIndex] !== hits[0]) {
+                        callback(null, rv);
+                        return;
+                    }
+                    // now: hits.length === 1 && parsedCmd.args[argIndex] === hits[0] -> show hint for next arg
+                    rv[0] = []; rv[1] = '';
+                }
+                let text;
+                if (argIndex === -1) {
+                    if (result.help) {
+                        text = result.help();
+                    } else {
+                        text = parsedCmd.cmd.getHelp();
+                    }
+                    text = !text || Array.isArray(text) ? text : [ text ];
+                } else if (result.hint) {
+                    const hint = result.hint(linePartial.endsWith(' ') ? argIndex : argIndex + 1, linePartial, parsedCmd);
+                    if (hint) {
+                        text = Array.isArray(hint) ? hint : [ hint ];
+                        if (text.length === 1) {
+                            text = [ ' ' ].concat(text);
+                            text[1] = '\r   ' + text[1];
+                        }
+                    }
+                }
+                if (text) {
+                    const textArray = Array.isArray(text) ? text : [ text ];
+                    for (const line of textArray) {
+                        rv[0].push((rv[0].length > 0 ? '\u001b[F' : '') + '  ' + line);
+                        rv[0].push('');
+                    }
+                    callback(null, rv);
+                    return;
+                }
+
+                callback(null, rv);
+
+            }).catch( () => callback(null, rv) );
             return;
         }
 
@@ -304,12 +355,12 @@ export class VfsShell {
             return;
         }
         const cmdString = parsedCmd.cmdString;
-        const hits = cmds.filter( cmd => {
+        const cmdHits = cmds.filter( cmd => {
             if (cmd.indexOf(cmdString) === 0) {
                 return cmd;
             }
         });
-        callback(null, [ hits, linePartial]);
+        callback(null, [ cmdHits, linePartial]);
     }
 
 
@@ -650,7 +701,7 @@ export class VfsShell {
                 this._env.stdout.write('Unknown command\n');
                 return 1;
             } else {
-                this._env.stdout.write(cmd.name + ' ' + cmd.getSyntax() + '\n');
+                // this._env.stdout.write(cmd.name + ' ' + cmd.getSyntax() + '\n');
                 const help = cmd.getHelp();
                 if (!Array.isArray(help)) {
                     this._env.stdout.write('   ' + help + '\n');

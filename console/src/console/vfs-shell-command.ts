@@ -10,6 +10,13 @@ import { CompleterResult } from 'readline';
 import * as debugsx from 'debug-sx';
 const debug: debugsx.ISimpleLogger = debugsx.createSimpleLogger('console:vfs-shell-command');
 
+export interface CmdCompleterResult {
+    completerResult?: CompleterResult;
+    isFile?: boolean;
+    choices?: string | string [];
+    hint?: (argIndex: number, line?: string, parsedCommand?: IParsedCommand) => string | string [];
+    help?: () => string | string [];
+}
 
 
 export abstract class VfsShellCommand {
@@ -39,9 +46,8 @@ export abstract class VfsShellCommand {
     public abstract getHelp (): string [] | string;
     public abstract getSyntax (): string [] | string;
 
-    public completer (linePartial: string, parsedCommand: IParsedCommand): Promise<CompleterResult> {
-        const rv: CompleterResult = [ [], linePartial ];
-        return Promise.resolve(rv);
+    public completer (line: string, parsedCommand: IParsedCommand, argIndex: number): Promise<CmdCompleterResult> {
+        return Promise.resolve(undefined);
     }
 
     public optionConfig (): IVfsCommandOptionConfig {
@@ -72,7 +78,9 @@ export abstract class VfsShellCommand {
         } else {
             debug.warn(err);
             this.env.stderr.write(': internal error\n');
-            this.env.stderr.write('  ' + err.stack + '\n');
+            if (err instanceof Error) {
+                this.env.stderr.write('  ' + err.stack + '\n');
+            }
             reject(err);
         }
         this.end();
