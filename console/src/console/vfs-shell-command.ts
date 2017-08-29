@@ -24,10 +24,12 @@ export abstract class VfsShellCommand {
     private _interrupted = false;
     private _env: IVfsEnvironment;
     private _shellCmds: IVfsShellCmds;
+    private _sep: { [ key: string ]: string };
 
     constructor (name: string, shellCmds: IVfsShellCmds) {
       this._name = name;
       this._shellCmds = shellCmds;
+      this._sep = {};
     }
 
     public get name () {
@@ -99,25 +101,34 @@ export abstract class VfsShellCommand {
       this.destroy(error);
     }
 
+    protected separator (length: number, char?: string): string {
+        char = char || '-';
+        let sep = this._sep[char + length];
+        if (!sep) {
+            sep = new Array(length).join(char);
+            this._sep[char + length] = sep;
+        }
+        return sep;
+    }
 
-    protected print (str: any): void {
-        if (!str) {
+    protected print (format: any, ...param: any[]): void {
+        let str: string;
+        if (!format) {
             return;
         }
-        if (str instanceof Error) {
-            str = util.format(str);
-        } else if (typeof str  === 'object') {
-            str = JSON.stringify(str);
-        }
+        // if (format instanceof Error) {
+        //     str = util.format(format, param);
+        // } else if (typeof str  === 'object') {
+        //     str = JSON.stringify(str);
+        // }
+        // str = util.format.apply(null, arguments);
+        str = sprintf.apply(null, arguments);
         this._env.stdout.write(str);
     }
 
-    protected println (str?: any): void {
-        if (str) {
-            this.print(str + '\n');
-        } else {
-            this._env.stdout.write('\n');
-        }
+    protected println (format: any, ...param: any[]): void {
+        this.print.apply(this, arguments);
+        this._env.stdout.write('\n');
     }
 
     protected parseOptions (args: string [],
@@ -179,6 +190,42 @@ export abstract class VfsShellCommand {
     protected completeAsFile (linePartial: string, parsedCommand: IParsedCommand): Promise<CompleterResult> {
         return this._shellCmds.completeAsFile(linePartial, parsedCommand.args);
     }
+
+    protected readObjects (args: string [], acceptOnlyArrays?: boolean): Promise<Object []> {
+        return new Promise<Object []>( (resolve, reject) => {
+            let p: Promise<string>;
+            if (args.length > 0 && args[0] !== '-') {
+                p = Promise.resolve(args[0]);
+            } else {
+                let json = '';
+                p = new Promise<string>( (res, rej) => {
+                    this.env.stdin.on('error', (err) => rej(err) );
+                    this.env.stdin.on('end', () => res(json) );
+                    // this.env.stdin.on('close', () => { } );
+                    this.env.stdin.on('data', (chunk) => json += chunk );
+                    this.env.stdin.resume();
+                });
+            }
+            p.then( (jsonString) => {
+                let obj;
+                try {
+                    obj = JSON.parse(jsonString);
+                    if (!Array.isArray(obj)) {
+                        if (!acceptOnlyArrays) {
+                            resolve( [ obj ]);
+                        } else {
+                            reject('json is not an array of objects');
+                        }
+                    } else {
+                        resolve(obj);
+                    }
+                } catch (err) {
+                    reject('parsing json error');
+                }
+            }).catch( err => reject('reading json data fails') );
+        });
+    }
+
 
     private destroy (error?: any) {
         if (this.env.stdout !== process.stdout && this.env.stdout !== process.stderr) {
