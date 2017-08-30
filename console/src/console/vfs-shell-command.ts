@@ -126,7 +126,7 @@ export abstract class VfsShellCommand {
         this._env.stdout.write(str);
     }
 
-    protected println (format: any, ...param: any[]): void {
+    protected println (format?: any, ...param: any[]): void {
         this.print.apply(this, arguments);
         this._env.stdout.write('\n');
     }
