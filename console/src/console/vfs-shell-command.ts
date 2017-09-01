@@ -64,7 +64,17 @@ export abstract class VfsShellCommand {
         return this._interrupted;
     }
 
-    public handleError (err: any, reject: Function, resolve?: Function, exitCode?: number) {
+    public async start (args: string [], options: IVfsCommandOptions): Promise<number> {
+        const exitCode = await this.execute(args, options);
+        if (exitCode !== 0) {
+            this.endWithError('', exitCode);
+        } else {
+            this.destroy();
+            return exitCode;
+        }
+    }
+
+    protected handleError (err: any, reject: Function, resolve?: Function, exitCode?: number) {
         this.env.stderr.write('Error (' + this.name + ')');
         if (typeof err === 'string') {
             this.env.stderr.write(': ' + err + '\n');
@@ -226,6 +236,11 @@ export abstract class VfsShellCommand {
         });
     }
 
+    protected endWithError(msg: string, exitCode?: number, cause?: Error): never {
+        msg = 'Error' + (exitCode ? ' ' + exitCode : '' ) + ' (' + this.name + ')' + (msg ? ': ' + msg : '');
+        throw new VfsShellCommandError(msg, exitCode, cause);
+    }
+
 
     private destroy (error?: any) {
         if (this.env.stdout !== process.stdout && this.env.stdout !== process.stderr) {
@@ -258,6 +273,26 @@ export abstract class VfsShellCommand {
         }
     }
 
+}
+
+export class VfsShellCommandError extends Error {
+
+    private _exitCode: number;
+    private _cause: Error;
+
+    constructor (message: string, exitCode?: number, cause?: Error) {
+        super(message);
+        this._exitCode = exitCode;
+        this._cause = cause;
+    }
+
+    public get exitCode (): number {
+        return this._exitCode || 255;
+    }
+
+    public get cause (): Error {
+        return this._cause;
+    }
 }
 
 export interface IVfsEnvironment {

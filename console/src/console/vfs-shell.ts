@@ -1,7 +1,7 @@
 import * as vfs from './vfs';
 import { IVfsEnvironment, IVfsShellCmds, PipeReadable, PipeWritable, VfsShellCommand,
          IParsedCommands, IParsedCommand, IVfsCommandOption, IVfsCommandOptions,
-         AppVersion, GitInfo, CmdCompleterResult } from './vfs-shell-command';
+         AppVersion, GitInfo, CmdCompleterResult, VfsShellCommandError } from './vfs-shell-command';
 import { addDefaultCommands } from './commands/vfs-commands';
 
 import * as stream from 'stream';
@@ -93,7 +93,14 @@ export class VfsShell {
 
     public handleInput (line?: string): void {
         const endOnError = (err: any) => {
-            if (err instanceof Error) {
+            if (err instanceof VfsShellCommandError) {
+                this._env.stderr.write(err.message + '\n');
+                if (err.cause && err.cause.message) {
+                    this._env.stderr.write('  Caused by: ' + err.cause.message + '\n');
+                }
+                this._lastExitCode = err.exitCode;
+                this._lastError = err;
+            } else if (err instanceof Error) {
                 this._env.stderr.write('Internal error' + (err.message ? ': ' + err.message : '') + '\n');
                 this._lastExitCode = 255;
                 this._lastError = err;
@@ -199,7 +206,7 @@ export class VfsShell {
                 for (const o of c.parsedCmd.options) {
                     options[o.name] = o;
                 }
-                c.promise = c.parsedCmd.cmd.execute(c.parsedCmd.args, options);
+                c.promise = c.parsedCmd.cmd.start(c.parsedCmd.args, options);
                 cmdPromisses.push(c.promise);
             }
             let timeout = 5000;
