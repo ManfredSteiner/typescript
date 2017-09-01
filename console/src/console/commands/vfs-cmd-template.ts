@@ -13,17 +13,12 @@ export class VfsCmdTemplate extends VfsShellCommand {
       };
     }
 
-    public execute (args: string [], options: IVfsCommandOptions): Promise<number> {
+    public async execute (args: string [], options: IVfsCommandOptions): Promise<number> {
         if (args.length !== 1) {
-            this.end('Error (template): invalid arguments');
-            return Promise.reject(1);
+            this.endWithError('Error (template): invalid arguments', 1);
         }
-        return new Promise<number>( (resolve, reject) => {
-            this.doit().then( () => {
-                this.end();
-                resolve(0);
-            }).catch( err => this.handleError(err, reject, resolve, 1));
-        });
+        await this.doit();
+        return 0;
     }
 
     public getHelp (): string {
@@ -34,8 +29,8 @@ export class VfsCmdTemplate extends VfsShellCommand {
         return '...';
     }
 
-    public completer (line: string, parsedCommand: IParsedCommand, argIndex: number): Promise<CmdCompleterResult> {
-        return Promise.resolve({ isFile: true });
+    public async completer (line: string, parsedCommand: IParsedCommand, argIndex: number): Promise<CmdCompleterResult> {
+        return { isFile: true };
     }
 
     private doit (): Promise<void> {

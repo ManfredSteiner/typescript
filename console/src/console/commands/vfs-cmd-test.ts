@@ -21,11 +21,10 @@ export class VfsCmdTest extends VfsShellCommand {
       };
     }
 
-    public execute (args: string [], options: IVfsCommandOptions): Promise<number> {
+    public async execute (args: string [], options: IVfsCommandOptions): Promise<number> {
         this._options = options;
         if (args.length < 1) {
-            this.end('Error (test): invalid arguments');
-            return Promise.reject(1);
+            this.endWithError('Error (test): invalid arguments', 1);
         }
         this._value = args[0];
         this._repeat = +args[1];
@@ -46,15 +45,14 @@ export class VfsCmdTest extends VfsShellCommand {
         return 'value x w';
     }
 
-    public completer (line: string, parsedCommand: IParsedCommand, argIndex: number): Promise<CmdCompleterResult> {
-        return Promise.resolve({ isFile: true });
+    public async completer (line: string, parsedCommand: IParsedCommand, argIndex: number): Promise<CmdCompleterResult> {
+        return { isFile: true };
     }
 
 
     private printValue () {
         if (this._repeat <= 0)  {
-            this.end();
-            this._resolve(0);
+            return 0;
         } else {
             this._repeat--;
             this.env.stdout.write(this._value + this._options.noLine ? '' : '\n');

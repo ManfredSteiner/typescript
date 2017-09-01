@@ -53,7 +53,7 @@ export class VfsShell {
         }
         this._aliases = { ll: [ 'ls', '-l' ] };
 
-        addDefaultCommands(this._shellCmds, this._commands, this.help.bind(this));
+        addDefaultCommands(this, this._commands, this.help.bind(this));
         this.setPrompt();
         this.console.prompt();
     }
