@@ -20,6 +20,16 @@ export interface CmdCompleterResult {
 
 
 export abstract class VfsShellCommand {
+    private static dateFormatter = new Intl.DateTimeFormat('de-AT', {
+        weekday: 'short',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric'
+    });
+
     private _name: string;
     private _interrupted = false;
     private _env: IVfsEnvironment;
@@ -74,42 +84,6 @@ export abstract class VfsShellCommand {
         }
     }
 
-    // protected handleError (err: any, reject: Function, resolve?: Function, exitCode?: number) {
-    //     this.env.stderr.write('Error (' + this.name + ')');
-    //     if (typeof err === 'string') {
-    //         this.env.stderr.write(': ' + err + '\n');
-    //         if (resolve) {
-    //             resolve(exitCode || 255);
-    //         } else {
-    //             reject(err);
-    //         }
-    //     } else if (err instanceof Error && err.message) {
-    //         this.env.stderr.write(': ' + err.message + '\n');
-    //         this.env.stderr.write('  ' + err.stack + '\n');
-    //         reject(err);
-    //     } else {
-    //         debug.warn(err);
-    //         this.env.stderr.write(': internal error\n');
-    //         if (err instanceof Error) {
-    //             this.env.stderr.write('  ' + err.stack + '\n');
-    //         }
-    //         reject(err);
-    //     }
-    //     this.end();
-    // }
-
-    // protected end (error?: any) {
-    //   if (error) {
-    //       if (typeof(error) === 'string') {
-    //           this.env.stderr.write('Error (' + this.name + '): ' + error + '\n');
-    //       } else if (error instanceof Error && typeof(error.message) === 'string') {
-    //           this.env.stderr.write(error.message + '\n');
-    //       } else {
-    //           this.env.stderr.write('Error' + '\n');
-    //       }
-    //   }
-    //   this.destroy(error);
-    // }
 
     protected separator (length: number, char?: string): string {
         char = char || '-';
@@ -126,12 +100,6 @@ export abstract class VfsShellCommand {
         if (!format) {
             return;
         }
-        // if (format instanceof Error) {
-        //     str = util.format(format, param);
-        // } else if (typeof str  === 'object') {
-        //     str = JSON.stringify(str);
-        // }
-        // str = util.format.apply(null, arguments);
         str = sprintf.apply(null, arguments);
         this._env.stdout.write(str);
     }
@@ -139,6 +107,15 @@ export abstract class VfsShellCommand {
     protected println (format?: any, ...param: any[]): void {
         this.print.apply(this, arguments);
         this._env.stdout.write('\n');
+    }
+
+    protected toDateString (time: number | Date): string {
+        if (time === undefined || time === null || (typeof time === 'number' && time <= 0)) {
+            return '';
+        }
+        const d = time instanceof Date ? time : new Date(time);
+        return VfsShellCommand.dateFormatter.format(time);
+
     }
 
     protected parseOptions (args: string [],

@@ -1,6 +1,7 @@
 
 // Node.js modules
 import { ReadLine, createInterface, CompleterResult } from 'readline';
+import { EventEmitter } from 'events';
 
 import * as vfs from './vfs';
 import { VfsShell, IVfsConsole } from './vfs-shell';
@@ -10,7 +11,7 @@ import * as debugsx from 'debug-sx';
 const debug: debugsx.ISimpleLogger = debugsx.createSimpleLogger('console:console');
 
 
-export class Console {
+export class Console extends EventEmitter {
     private _version: AppVersion;
     private _out: NodeJS.WritableStream;
     private _readLine: ReadLine;
@@ -20,7 +21,7 @@ export class Console {
     private _questionTimer: NodeJS.Timer;
 
     constructor (name: string, version: AppVersion, osFsBase?: string) {
-
+        super();
         this._version = version;
         this._osFsBase = osFsBase || '/tmp';
         this._out = process.stdout;
@@ -67,6 +68,13 @@ export class Console {
         this._exitCallback = callback;
     }
 
+    public setHistory (history: string []) {
+        (<any>this._readLine).history = history.slice();
+    }
+
+    public getHistory (): string [] {
+        return (<any>this._readLine).history;
+    }
 
     public exit (done: () => void): void {
         const cb = (answer: string) => {
@@ -84,7 +92,7 @@ export class Console {
 
     public question (query: string, callback: (answer: string) => void, options?: IQuestionOptions) {
         const history = (<any>this._readLine).history;
-        const historySize = Array.isArray(history) ? history.length : undefined;
+        const oldHistorySize = Array.isArray(history) ? history.length : undefined;
 
         if (options.hide ||  options.hideSmart || options.replace ) {
             const stdin = process.stdin;
@@ -111,7 +119,6 @@ export class Console {
                 if (options.hideSmart) {
                     let out = input.length < 2 ? '' : new Array(input.length).join(rep);
                     out += (s !== '\u007f' && s !== '\b') ? c : input.substr(input.length - 1, 1);
-                    debug.info('question: input = %s, length = %s, out = %s', input, input.length, out);
                     process.stdout.write(out);
                     this._questionTimer = setTimeout( () => {
                         process.stdout.write('\u001b[2K\u001b[200D');
@@ -130,14 +137,16 @@ export class Console {
         }
 
         this._readLine.question(query, (answer) => {
-            if (historySize > 0 &&  options && options.notToHistory) {
-                (<any>this._readLine).history = history.slice(1);
+            const newHistorySize = Array.isArray(history) ? history.length : 0;
+            if (newHistorySize > oldHistorySize &&  options && options.notToHistory) {
+                (<any>this._readLine).history = history.slice(newHistorySize - oldHistorySize);
             }
             callback(answer);
         });
     }
 
     private parseInput (input: string) {
+        this.emit('line', input);
         this._shell.handleInput(input);
     }
 
