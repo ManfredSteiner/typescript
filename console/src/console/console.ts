@@ -4,7 +4,7 @@ import { ReadLine, createInterface, CompleterResult } from 'readline';
 
 import * as vfs from './vfs';
 import { VfsShell, IVfsConsole } from './vfs-shell';
-import { AppVersion } from './vfs-shell-command';
+import { AppVersion, IQuestionOptions } from './vfs-shell-command';
 
 import * as debugsx from 'debug-sx';
 const debug: debugsx.ISimpleLogger = debugsx.createSimpleLogger('console:console');
@@ -18,6 +18,7 @@ export class Console {
     private _exitCallback: (exitCode: number) => void;
     private _waitForResponse: (response: string) => void;
     private _osFsBase: string;
+    private _questionTimer: NodeJS.Timer;
 
     constructor (name: string, version: AppVersion, osFsBase?: string) {
 
@@ -84,6 +85,58 @@ export class Console {
         };
     }
 
+    public question (query: string, callback: (answer: string) => void, options?: IQuestionOptions) {
+        const history = (<any>this._readLine).history;
+        const historySize = Array.isArray(history) ? history.length : undefined;
+
+        if (options.hide ||  options.hideSmart || options.replace ) {
+            const stdin = process.stdin;
+            const listener = (c: Buffer) => {
+                const s = c.toString();
+                const rep = (options.replace && options.replace.length > 0) ? options.replace.substr(0, 1) : '*';
+                if (this._questionTimer) {
+                    clearTimeout(this._questionTimer);
+                    this._questionTimer = undefined;
+                }
+                if (s === '\r' || s === '\n') {
+                    stdin.removeListener('data', listener);
+                    // delete line with password from screen
+                    process.stdout.write('\u001b[1A\u001b[2K\u001b[200D');
+                    return;
+                } else {
+                    process.stdout.write('\u001b[2K\u001b[200D');
+                    process.stdout.write(query);
+                }
+
+                const input = (<any>this._readLine).line;
+                if (options.hideSmart) {
+                    let out = input.length < 2 ? '' : new Array(input.length).join(rep);
+                    out += (s !== '\u007f' && s !== '\b') ? c : input.substr(input.length - 1, 1);
+                    debug.info('question: input = %s, length = %s, out = %s', input, input.length, out);
+                    process.stdout.write(out);
+                    this._questionTimer = setTimeout( () => {
+                        process.stdout.write('\u001b[2K\u001b[200D');
+                        process.stdout.write(query);
+                        process.stdout.write(new Array((<any>this._readLine).line.length + 1).join(rep));
+                        if (this._questionTimer) {
+                            clearTimeout(this._questionTimer);
+                            this._questionTimer = undefined;
+                        }
+                    }, 1000);
+                } else if (options.replace) {
+                    process.stdout.write(new Array((<any>this._readLine).line.length + 1).join(rep));
+                }
+            }
+            stdin.on('data', listener);
+        }
+
+        this._readLine.question(query, (answer) => {
+            if (historySize > 0 &&  options && options.notToHistory) {
+                (<any>this._readLine).history = history.slice(1);
+            }
+            callback(answer);
+        });
+    }
 
     private parseInput (input: string) {
         if (this._waitForResponse) {
@@ -94,7 +147,7 @@ export class Console {
     }
 
 
-    private completer (linePartial: string, callback: (err: any, result: CompleterResult) => void ) {
+    private completer (linePartial: string, callback: (err: any, result: CompleterResult) => void) {
         this._shell.completer(linePartial, callback);
     }
 

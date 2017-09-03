@@ -1,12 +1,12 @@
 import * as vfs from './vfs';
 import { IVfsEnvironment, IVfsShellCmds, PipeReadable, PipeWritable, VfsShellCommand,
          IParsedCommands, IParsedCommand, IVfsCommandOption, IVfsCommandOptions,
-         AppVersion, GitInfo, CmdCompleterResult, VfsShellCommandError } from './vfs-shell-command';
+         AppVersion, GitInfo, CmdCompleterResult, VfsShellCommandError, IQuestionOptions } from './vfs-shell-command';
 import { addDefaultCommands } from './commands/vfs-commands';
 
 import * as stream from 'stream';
 import { Readable, Writable } from 'stream';
-import { CompleterResult } from 'readline';
+import { CompleterResult, ReadLine } from 'readline';
 
 import * as debugsx from 'debug-sx';
 const debug: debugsx.ISimpleLogger = debugsx.createSimpleLogger('console:VfsShell');
@@ -22,6 +22,8 @@ export class VfsShell {
     private _lastExitCode: number;
     private _lastError: any;
     private _waitingCommands: string [] = [];
+    private _isQuestionActive: boolean;
+    private _timeout: number;
     private _env: IVfsEnvironment;
     private _shellCmds: IVfsShellCmds;
     private _aliases: { [ key: string ]: string []};
@@ -39,6 +41,8 @@ export class VfsShell {
         this._user = user;
         this._env = { stdout: process.stdout, stdin: process.stdin, stderr: process.stderr };
         this._lastExitCode = 0;
+        this._timeout = -1;
+        this._isQuestionActive = false;
 
         vfs.getRoot().addChild(new vfs.VfsOsFsDirectory('osfs', vfs.getRoot(), osFsBase || '/tmp'));
         vfs.getRoot().root.addChild(new VfsDirectorySys('sys', vfs.getRoot(), version));
@@ -48,6 +52,7 @@ export class VfsShell {
             cd: this.cmdCd.bind(this),
             completeAsFile: this.cmdCompleteAsFile.bind(this),
             files: this.cmdFiles.bind(this),
+            question: this.cmdQuestion.bind(this),
             pwd: this.cmdPwd.bind(this),
             version: () => console.version
         }
@@ -66,6 +71,10 @@ export class VfsShell {
         const rv = this._commands[cmd.name];
         this._commands[cmd.name] = cmd;
         return rv;
+    }
+
+    public addAlias (alias: string, args: string []): string {
+        return this.cmdAlias(alias, args);
     }
 
     public get shellCommands (): IVfsShellCmds {
@@ -209,12 +218,12 @@ export class VfsShell {
                 c.promise = c.parsedCmd.cmd.start(c.parsedCmd.args, options);
                 cmdPromisses.push(c.promise);
             }
-            let timeout = 5000;
+            this._timeout = 5000;
             Promise.all(cmdPromisses).then( () => {
-                timeout = -1;
+                this._timeout = -1;
                 endOk();
-            }).catch( err => { timeout = -1; endOnError(err) });
-            setTimeout(() => { if (timeout !== -1) { endOnError('command hanging'); } }, timeout);
+            }).catch( err => { this._timeout = -1; endOnError(err) });
+            setTimeout( () => this.handleCmdTimeout(), this._timeout);
         }).catch( err => endOnError(err) );
     }
 
@@ -368,6 +377,18 @@ export class VfsShell {
             }
         });
         callback(null, [ cmdHits, linePartial]);
+    }
+
+    private handleCmdTimeout () {
+        if (this._timeout > 0) {
+           if (this._isQuestionActive) {
+               setTimeout( () => this.handleCmdTimeout(), this._timeout);
+           } else {
+               this._env.stderr.write('\nError: command hanging!\n');
+               this._timeout = undefined;
+               this._cmdPending = false;
+           }
+        }
     }
 
 
@@ -680,6 +701,17 @@ export class VfsShell {
         return p;
     }
 
+    private cmdQuestion (text: string, options?: IQuestionOptions): Promise<string> {
+        return new Promise<string>( (resolve, reject) => {
+          this._isQuestionActive = true;
+          this._console.question(text, result => {
+            this._isQuestionActive = false;
+            resolve(result);
+          }, options);
+
+       })
+    }
+
     private cmdPwd (): vfs.VfsDirectoryNode {
         return this._pwd;
     }
@@ -774,10 +806,12 @@ class VfsDirectorySys extends vfs.VfsDirectoryNode {
 }
 
 
+
 export interface IVfsConsole {
   version: AppVersion;
   out: NodeJS.WritableStream;
   prompt (preserveCursor?: boolean): void;
+  question (query: string, callback: (answer: string) => void, options?: IQuestionOptions): void;
   setPrompt (prompt: string): void;
   exit (done: () => void): void;
 }

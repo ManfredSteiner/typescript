@@ -236,9 +236,13 @@ export abstract class VfsShellCommand {
         });
     }
 
-    protected endWithError(msg: string, exitCode?: number, cause?: Error): never {
+    protected endWithError (msg: string, exitCode?: number, cause?: Error): never {
         msg = 'Error' + (exitCode ? ' ' + exitCode : '' ) + ' (' + this.name + ')' + (msg ? ': ' + msg : '');
         throw new VfsShellCommandError(msg, exitCode, cause);
+    }
+
+    protected question (text: string, options?: IQuestionOptions): Promise<string> {
+        return this._shellCmds.question(text, options);
     }
 
 
@@ -379,6 +383,7 @@ export interface IVfsShellCmds {
     cd: (path: string) => Promise<vfs.VfsDirectoryNode>,
     completeAsFile: (linePartial: string, args: string []) => Promise<CompleterResult>;
     files: (path: string) => Promise<vfs.VfsAbstractNode []>,
+    question: (text: string, options?: IQuestionOptions) => Promise<string>,
     pwd: () => vfs.VfsDirectoryNode,
     version: () => AppVersion
 }
@@ -412,4 +417,11 @@ export interface IParsedCommand {
 export interface IParsedCommands {
     valid: boolean,
     cmds: IParsedCommand []
+}
+
+export interface IQuestionOptions {
+    hide?: boolean;
+    hideSmart?: boolean;
+    replace?: string;
+    notToHistory?: boolean;
 }
