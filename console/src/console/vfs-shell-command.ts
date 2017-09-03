@@ -424,4 +424,5 @@ export interface IQuestionOptions {
     hideSmart?: boolean;
     replace?: string;
     notToHistory?: boolean;
+    deleteOnEnter?: boolean;
 }

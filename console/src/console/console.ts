@@ -16,7 +16,6 @@ export class Console {
     private _readLine: ReadLine;
     private _shell: VfsShell;
     private _exitCallback: (exitCode: number) => void;
-    private _waitForResponse: (response: string) => void;
     private _osFsBase: string;
     private _questionTimer: NodeJS.Timer;
 
@@ -70,19 +69,17 @@ export class Console {
 
 
     public exit (done: () => void): void {
-        this._out.write('really exit (yes/no): ');
-        this._waitForResponse = (response) => {
-            if (response === 'yes') {
-                // process.exit(0);
+        const cb = (answer: string) => {
+            if (answer === 'yes') {
                 this._exitCallback(0);
-            } else if (response === 'no') {
-                this._waitForResponse = undefined;
-                // this._shell.handleInput();
-                done();
-            } else {
+            } else if (answer !== 'no') {
                 this._out.write('invalid answer, use yes or no: ');
+                this.question('really exit (yes/no): ', cb, { notToHistory: true });
+            } else {
+                done();
             }
         };
+        this.question('really exit (yes/no): ', cb, { notToHistory: true })
     }
 
     public question (query: string, callback: (answer: string) => void, options?: IQuestionOptions) {
@@ -101,7 +98,9 @@ export class Console {
                 if (s === '\r' || s === '\n') {
                     stdin.removeListener('data', listener);
                     // delete line with password from screen
-                    process.stdout.write('\u001b[1A\u001b[2K\u001b[200D');
+                    if (options.deleteOnEnter) {
+                        process.stdout.write('\u001b[1A\u001b[2K\u001b[200D');
+                    }
                     return;
                 } else {
                     process.stdout.write('\u001b[2K\u001b[200D');
@@ -139,10 +138,6 @@ export class Console {
     }
 
     private parseInput (input: string) {
-        if (this._waitForResponse) {
-           this._waitForResponse(input);
-           return;
-        }
         this._shell.handleInput(input);
     }
 
