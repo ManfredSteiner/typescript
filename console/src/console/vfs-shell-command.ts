@@ -110,11 +110,21 @@ export abstract class VfsShellCommand {
     }
 
     protected toDateString (time: number | Date): string {
-        if (time === undefined || time === null || (typeof time === 'number' && time <= 0)) {
-            return '';
+        try {
+            if (time === undefined || time === null || (typeof time === 'number' && time <= 0)) {
+                return '';
+            }
+            const d = time instanceof Date ? time : new Date(time);
+            return VfsShellCommand.dateFormatter.format(time);
+        } catch (err) {
+            // to investigate, first conversion leads to reg exp error
+            try {
+              const s = VfsShellCommand.dateFormatter.format(time);
+              return s;
+            } catch (err2) {
+                return err2.message;
+          }
         }
-        const d = time instanceof Date ? time : new Date(time);
-        return VfsShellCommand.dateFormatter.format(time);
 
     }
 

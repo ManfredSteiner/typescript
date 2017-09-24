@@ -316,7 +316,8 @@ export class VfsShell {
                     const choiceArray = Array.isArray(result.choices) ? result.choices : [ result.choices ];
                     const hits = choiceArray.filter((c) => c.startsWith(parsedCmd.args[argIndex]));
                     rv[0] = hits.length > 0 ? hits : choiceArray;
-                    if (hits.length === 1) {
+                    // if (hits.length === 1) {
+                    if (hits.length > 0) {
                         rv[1] = parsedCmd.args[argIndex];
                     }
                     if (hits.length !== 1 || parsedCmd.args[argIndex] !== hits[0]) {
