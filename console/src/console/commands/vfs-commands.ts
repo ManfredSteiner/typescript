@@ -131,11 +131,8 @@ class VfsCmdGrep extends VfsShellCommand {
         }
 
         const expr = args[0];
-        console.log(expr);
         if (expr.startsWith('/') && expr.endsWith('/')) {
             this._regExp = new RegExp(expr.substr(1, expr.length - 2));
-            console.log('regexp');
-            console.log(this._regExp);
         } else {
             let x = '';
             for (const c of expr) {
