@@ -122,19 +122,25 @@ export abstract class VfsShellCommand {
 
     protected toPointedInteger (value: number): string {
         let s = '';
-        do {
+        value = Math.floor(value);
+        while (value >= 1000) {
             const x = Math.floor(value % 1000);
             value = Math.floor(value / 1000);
-            if (x > 100) {
+            if (x >= 100) {
                 s = x + ( s !== '' ? '.' + s : s);
-            } else if (x >  10) {
+            } else if (x >=  10) {
                 s = '0' + x + ( s !== '' ? '.' + s : s);
-            } else if (x >  1)  {
+            } else if (x >=  1)  {
                 s = '00' + x + ( s !== '' ? '.' + s : s);
             } else {
                 s = '000' + ( s !== '' ? '.' + s : s);
             }
-        } while (value > 0);
+        };
+
+        if (s === '' || value > 0) {
+            s = value + ( s !== '' ? '.' + s : s);
+        }
+
 
         return s;
     }
