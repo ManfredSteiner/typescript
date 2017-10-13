@@ -54,6 +54,7 @@ export class VfsShell {
             files: this.cmdFiles.bind(this),
             question: this.cmdQuestion.bind(this),
             pwd: this.cmdPwd.bind(this),
+            triggerWatchdog: this.cmdTriggerWatchdog.bind(this),
             version: () => console.version
         }
         this._aliases = { ll: [ 'ls', '-l' ] };
@@ -218,12 +219,12 @@ export class VfsShell {
                 c.promise = c.parsedCmd.cmd.start(c.parsedCmd.args, options);
                 cmdPromisses.push(c.promise);
             }
-            this._timeout = 5000;
+            this.cmdTriggerWatchdog(this, 5000);
             Promise.all(cmdPromisses).then( () => {
                 this._timeout = -1;
                 endOk();
             }).catch( err => { this._timeout = -1; endOnError(err) });
-            setTimeout( () => this.handleCmdTimeout(), this._timeout);
+            setTimeout( () => this.handleCmdTimeout(), this._timeout - Date.now());
         }).catch( err => endOnError(err) );
     }
 
@@ -381,14 +382,19 @@ export class VfsShell {
     }
 
     private handleCmdTimeout () {
-        if (this._timeout > 0) {
-           if (this._isQuestionActive) {
-               setTimeout( () => this.handleCmdTimeout(), this._timeout);
-           } else {
-               this._env.stderr.write('\nError: command hanging!\n');
-               this._timeout = undefined;
-               this._cmdPending = false;
-           }
+        if (this._timeout < 0) {
+            return;
+        }
+        const now = Date.now();
+        if (this._isQuestionActive) {
+            this._timeout = Date.now() + 5000;
+            setTimeout( () => this.handleCmdTimeout(), Date.now() - this._timeout);
+        } else if (this._timeout <= now) {
+            this._env.stderr.write('\nError: command hanging!\n');
+            this._timeout = undefined;
+            this._cmdPending = false;
+        } else {
+            setTimeout( () => this.handleCmdTimeout(), now - this._timeout);
         }
     }
 
@@ -715,6 +721,10 @@ export class VfsShell {
 
     private cmdPwd (): vfs.VfsDirectoryNode {
         return this._pwd;
+    }
+
+    private cmdTriggerWatchdog (source: any, millis?: number) {
+        this._timeout = Date.now() + (millis > 0 ? millis : 5000);
     }
 
     private help (args: string [], options: IVfsCommandOptions): number {

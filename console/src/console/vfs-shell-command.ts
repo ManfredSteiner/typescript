@@ -102,6 +102,7 @@ export abstract class VfsShellCommand {
         }
         str = sprintf.apply(null, arguments);
         this._env.stdout.write(str);
+        this._shellCmds.triggerWatchdog(this, 5000);
     }
 
     protected println (format?: any, ...param: any[]): void {
@@ -390,6 +391,7 @@ export interface IVfsShellCmds {
     files: (path: string) => Promise<vfs.VfsAbstractNode []>,
     question: (text: string, options?: IQuestionOptions) => Promise<string>,
     pwd: () => vfs.VfsDirectoryNode,
+    triggerWatchdog: (source: any, miilis: number) => void,
     version: () => AppVersion
 }
 
