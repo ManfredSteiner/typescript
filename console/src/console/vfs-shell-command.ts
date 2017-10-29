@@ -136,7 +136,7 @@ export abstract class VfsShellCommand {
             } else {
                 s = '000' + ( s !== '' ? '.' + s : s);
             }
-        };
+        }
 
         if (s === '' || value > 0) {
             s = value + ( s !== '' ? '.' + s : s);
@@ -370,33 +370,33 @@ export class PipeWritable extends Writable {
 }
 
 export interface GitInfo {
-    remotes: string [],
-    branch: string,
-    tag: string,
-    hash: string,
-    modified: string [],
-    submodules: { path: string, gitInfo: GitInfo } []
+    remotes: string [];
+    branch: string;
+    tag: string;
+    hash: string;
+    modified: string [];
+    submodules: { path: string, gitInfo: GitInfo } [];
 }
 
 export interface AppVersion {
-    version: string,
-    startedAt: Date,
-    git: GitInfo
+    version: string;
+    startedAt: Date;
+    git: GitInfo;
 }
 
 export interface IVfsShellCmds {
-    alias: (alias: string, args: string []) => string,
-    cd: (path: string) => Promise<vfs.VfsDirectoryNode>,
+    alias: (alias: string, args: string []) => string;
+    cd: (path: string) => Promise<vfs.VfsDirectoryNode>;
     completeAsFile: (linePartial: string, args: string []) => Promise<CompleterResult>;
-    files: (path: string) => Promise<vfs.VfsAbstractNode []>,
-    question: (text: string, options?: IQuestionOptions) => Promise<string>,
-    pwd: () => vfs.VfsDirectoryNode,
-    triggerWatchdog: (source: any, miilis: number) => void,
-    version: () => AppVersion
+    files: (path: string) => Promise<vfs.VfsAbstractNode []>;
+    question: (text: string, options?: IQuestionOptions) => Promise<string>;
+    pwd: () => vfs.VfsDirectoryNode;
+    triggerWatchdog: (source: any, miilis: number) => void;
+    version: () => AppVersion;
 }
 
 export interface IVfsCommandOptionConfig {
-   [ key: string ]: { short?: string, argCnt?: number }
+   [ key: string ]: { short?: string, argCnt?: number };
 }
 
 export interface IVfsCommandOption {
@@ -413,17 +413,17 @@ export interface IVfsCommandOptions {
 
 export interface IParsedCommand {
     valid: boolean;
-    cmd?: VfsShellCommand,
-    options?: IVfsCommandOption [],
-    args?: string [],
-    cmdString?: string,
-    optionPartial?: { option: string, known: boolean, args?: string [] }
-    beforeAlias?: string []
+    cmd?: VfsShellCommand;
+    options?: IVfsCommandOption [];
+    args?: string [];
+    cmdString?: string;
+    optionPartial?: { option: string, known: boolean, args?: string [] };
+    beforeAlias?: string [];
 }
 
 export interface IParsedCommands {
-    valid: boolean,
-    cmds: IParsedCommand []
+    valid: boolean;
+    cmds: IParsedCommand [];
 }
 
 export interface IQuestionOptions {
