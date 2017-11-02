@@ -20,6 +20,9 @@ export interface CmdCompleterResult {
 
 
 export abstract class VfsShellCommand {
+
+    public static WEEKDAY = [ 'So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa' ];
+
     private static dateFormatter = new Intl.DateTimeFormat('de-AT', {
         weekday: 'short',
         year: 'numeric',
@@ -110,15 +113,44 @@ export abstract class VfsShellCommand {
         this._env.stdout.write('\n');
     }
 
-    protected toDateString (time: number | Date): string {
+    protected toDateTimeString (time: number | Date): string {
         if (time === undefined || time === null || (typeof time === 'number' && time <= 0)) {
             return '';
         }
         const d = time instanceof Date ? time : new Date(time);
-        return [ 'So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa' ][d.getDay()] +
+        return  + VfsShellCommand.WEEKDAY[d.getDay()] +
                 ', ' + d.getDate() + '.' + (d.getMonth() + 1) + '.' + d.getFullYear() +
                 sprintf(', %02d:%02d:%02d', d.getHours(), d.getMinutes(), d.getSeconds() );
 
+    }
+
+    protected toDateString (time: number | Date, fixedSize?: boolean): string {
+        if (time === undefined || time === null || (typeof time === 'number' && time <= 0)) {
+            return '';
+        }
+        const d = time instanceof Date ? time : new Date(time);
+
+        if (fixedSize) {
+            return sprintf('%2s, %04d-%02d-%02d',
+                            VfsShellCommand.WEEKDAY[d.getDay()], d.getFullYear(), d.getMonth() + 1, d.getDate());
+        } else {
+            return VfsShellCommand.WEEKDAY[d.getDay()] + ', ' + d.getDate() + '.' + (d.getMonth() + 1) + '.' + d.getFullYear();
+        }
+    }
+
+    protected toHumanReadableBytes (bytes: number): string {
+        if (typeof bytes !== 'number' || bytes < 0) {
+            return '';
+        }
+        if (bytes < 1024) {
+            return bytes + ' Bytes';
+        } else if (bytes < (1024 * 1024)) {
+            return (Math.floor(bytes / 1024 * 10) / 10) + ' KiB';
+        } else if (bytes < (1024 * 1024 * 1024)) {
+            return (Math.floor(bytes / 1024 / 1024 * 100) / 100) + ' MiB';
+        } else {
+            return (Math.floor(bytes / 1024 / 1024 / 1024 * 100) / 100) + ' GiB';
+        }
     }
 
     protected toPointedInteger (value: number): string {

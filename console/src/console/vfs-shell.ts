@@ -56,7 +56,7 @@ export class VfsShell {
             pwd: this.cmdPwd.bind(this),
             triggerWatchdog: this.cmdTriggerWatchdog.bind(this),
             version: () => console.version
-        }
+        };
         this._aliases = { ll: [ 'ls', '-l' ] };
 
         addDefaultCommands(this, this._commands, this.help.bind(this));
@@ -196,7 +196,7 @@ export class VfsShell {
             }
 
             const redirects = this.parseRedirection(cmds[i].parsedCmd, env);
-            cmds[i].env = env
+            cmds[i].env = env;
             promisses.push(new Promise<any>( (resolve, reject) => {
                 vfs.getNodes(redirects).then( nodes => {
                     env.stdin = nodes[0] ? vfs.createReadStream(nodes[0]) : env.stdin;
@@ -223,7 +223,7 @@ export class VfsShell {
             Promise.all(cmdPromisses).then( () => {
                 this._timeout = -1;
                 endOk();
-            }).catch( err => { this._timeout = -1; endOnError(err) });
+            }).catch( err => { this._timeout = -1; endOnError(err); });
             setTimeout( () => this.handleCmdTimeout(), this._timeout - Date.now());
         }).catch( err => endOnError(err) );
     }
@@ -528,7 +528,7 @@ export class VfsShell {
 
         rv.options = [];
         while (true) {
-            const o = this.parseOption(args, cmd)
+            const o = this.parseOption(args, cmd);
             if (!o) { break; }
             rv.options = rv.options.concat(o);
         }
@@ -583,7 +583,7 @@ export class VfsShell {
         if (!Array.isArray(args) || args.length === 0) {
             if (this._aliases[alias]) {
                 delete this._aliases[alias];
-                return 'alias ' + alias + ' deleted.\n'
+                return 'alias ' + alias + ' deleted.\n';
             } else {
                 return 'No alias ' + alias + 'defined.\n';
             }
@@ -674,7 +674,7 @@ export class VfsShell {
         let filter = '*';
         let fileNamePartial = '';
         if (args.length > 0) {
-            fileNamePartial = args[args.length - 1 ]
+            fileNamePartial = args[args.length - 1 ];
             filter = fileNamePartial + '*';
             const i = fileNamePartial.lastIndexOf('/');
             if (i >= 0) {
@@ -716,7 +716,7 @@ export class VfsShell {
             resolve(result);
           }, options);
 
-       })
+       });
     }
 
     private cmdPwd (): vfs.VfsDirectoryNode {
