@@ -118,7 +118,7 @@ export abstract class VfsShellCommand {
             return '';
         }
         const d = time instanceof Date ? time : new Date(time);
-        return  + VfsShellCommand.WEEKDAY[d.getDay()] +
+        return VfsShellCommand.WEEKDAY[d.getDay()] +
                 ', ' + d.getDate() + '.' + (d.getMonth() + 1) + '.' + d.getFullYear() +
                 sprintf(', %02d:%02d:%02d', d.getHours(), d.getMinutes(), d.getSeconds() );
 
